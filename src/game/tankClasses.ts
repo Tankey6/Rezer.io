@@ -1,4 +1,4 @@
-import { TankClass, BarrelDef } from './types';
+import { TankClass, BarrelDef } from './types.ts';
 
 export const baseBarrel: BarrelDef = {
   angleOffset: 0, length: 35, width: 20, xOffset: 0, yOffset: 0, delay: 0,

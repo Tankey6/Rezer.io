@@ -1,7 +1,7 @@
-import { Entity } from './Entity';
-import { Vector } from '../Vector';
-import { EntityType } from '../types';
-import { darkenColor } from '../utils';
+import { Entity } from './Entity.ts';
+import { Vector } from '../Vector.ts';
+import { EntityType } from '../types.ts';
+import { darkenColor } from '../utils.ts';
 
 export class Crasher extends Entity {
   angle: number = Math.random() * Math.PI * 2;

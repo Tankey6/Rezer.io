@@ -1,7 +1,7 @@
-import { Entity } from './Entity';
-import { Vector } from '../Vector';
-import { EntityType, ShapeType } from '../types';
-import { darkenColor } from '../utils';
+import { Entity } from './Entity.ts';
+import { Vector } from '../Vector.ts';
+import { EntityType, ShapeType } from '../types.ts';
+import { darkenColor } from '../utils.ts';
 
 export class Shape extends Entity {
   shapeType: ShapeType;

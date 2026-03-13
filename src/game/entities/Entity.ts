@@ -1,5 +1,5 @@
-import { Vector } from '../Vector';
-import { EntityType } from '../types';
+import { Vector } from '../Vector.ts';
+import { EntityType } from '../types.ts';
 
 let nextEntityId = 1;
 

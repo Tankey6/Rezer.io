@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
-import { TankClass } from '../game/types';
-import { TANK_CLASSES } from '../game/tankClasses';
-import { darkenColor } from '../game/utils';
+import { TankClass } from '../game/types.ts';
+import { TANK_CLASSES } from '../game/tankClasses.ts';
+import { darkenColor } from '../game/utils.ts';
 
 interface TankPreviewProps {
   tankClass: TankClass;

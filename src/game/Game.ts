@@ -1,16 +1,16 @@
-import { Vector } from './Vector';
-import { Player } from './entities/Player';
-import { Bullet } from './entities/Bullet';
-import { Trap } from './entities/Trap';
-import { Drone } from './entities/Drone';
-import { Shape } from './entities/Shape';
-import { Crasher } from './entities/Crasher';
-import { EnemyTank } from './entities/EnemyTank';
-import { ShapeType, TankClass, EntityType } from './types';
-import { TANK_CLASSES, getFovMult } from './tankClasses';
-import { Entity } from './entities/Entity';
-import { BinaryReader, BinaryWriter } from './binary';
-import { calculateTotalXp } from './utils';
+import { Vector } from './Vector.ts';
+import { Player } from './entities/Player.ts';
+import { Bullet } from './entities/Bullet.ts';
+import { Trap } from './entities/Trap.ts';
+import { Drone } from './entities/Drone.ts';
+import { Shape } from './entities/Shape.ts';
+import { Crasher } from './entities/Crasher.ts';
+import { EnemyTank } from './entities/EnemyTank.ts';
+import { ShapeType, TankClass, EntityType } from './types.ts';
+import { TANK_CLASSES, getFovMult } from './tankClasses.ts';
+import { Entity } from './entities/Entity.ts';
+import { BinaryReader, BinaryWriter } from './binary.ts';
+import { calculateTotalXp } from './utils.ts';
 
 export class Game {
   isServer: boolean = false;

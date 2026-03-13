@@ -1,11 +1,11 @@
-import { Entity } from './Entity';
-import { Vector } from '../Vector';
-import { EntityType, TankClass, BarrelDef, ShapeType } from '../types';
-import { TANK_CLASSES, UPGRADE_PATHS } from '../tankClasses';
-import { darkenColor } from '../utils';
-import { Bullet } from './Bullet';
-import { Trap } from './Trap';
-import { Drone } from './Drone';
+import { Entity } from './Entity.ts';
+import { Vector } from '../Vector.ts';
+import { EntityType, TankClass, BarrelDef, ShapeType } from '../types.ts';
+import { TANK_CLASSES, UPGRADE_PATHS } from '../tankClasses.ts';
+import { darkenColor } from '../utils.ts';
+import { Bullet } from './Bullet.ts';
+import { Trap } from './Trap.ts';
+import { Drone } from './Drone.ts';
 
 const AI_NAMES = [
   'Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot', 'Golf', 'Hotel',

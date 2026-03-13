@@ -1,8 +1,8 @@
-import { Entity } from './Entity';
-import { Vector } from '../Vector';
-import { EntityType, TankClass } from '../types';
-import { darkenColor } from '../utils';
-import { TANK_CLASSES, UPGRADE_PATHS } from '../tankClasses';
+import { Entity } from './Entity.ts';
+import { Vector } from '../Vector.ts';
+import { EntityType, TankClass } from '../types.ts';
+import { darkenColor } from '../utils.ts';
+import { TANK_CLASSES, UPGRADE_PATHS } from '../tankClasses.ts';
 
 export class Player extends Entity {
   angle: number = 0;
