@@ -161,7 +161,7 @@ export function setupMultiplayer(server: http.Server) {
   // Game loop
   let lastTime = performance.now();
   let accumulator = 0;
-  const fixedDt = 1 / 60;
+  const fixedDt = 1 / 24;
 
   setInterval(() => {
     const now = performance.now();
