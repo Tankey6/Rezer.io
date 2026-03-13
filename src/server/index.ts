@@ -170,6 +170,7 @@ export function setupMultiplayer(server: http.Server) {
     lastTime = now;
     
     accumulator += frameTime;
+    if (accumulator > 0.1) accumulator = 0.1;
     while (accumulator >= fixedDt) {
       game.update(fixedDt);
       accumulator -= fixedDt;
