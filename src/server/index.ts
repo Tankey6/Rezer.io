@@ -1,9 +1,9 @@
 import { WebSocketServer, WebSocket } from 'ws';
-import { Game } from '../game/Game';
-import { BinaryReader, BinaryWriter } from '../game/binary';
-import { Vector } from '../game/Vector';
-import { Player } from '../game/entities/Player';
-import { calculateTotalXp } from '../game/utils';
+import { Game } from '../game/Game.ts';
+import { BinaryReader, BinaryWriter } from '../game/binary.ts';
+import { Vector } from '../game/Vector.ts';
+import { Player } from '../game/entities/Player.ts';
+import { calculateTotalXp } from '../game/utils.ts';
 import http from 'http';
 
 interface ExtWebSocket extends WebSocket {
