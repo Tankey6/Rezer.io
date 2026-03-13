@@ -100,7 +100,9 @@ export enum TankClass {
   Mortar = 'Mortar',
   Fogmaker = 'Fogmaker',
   Harvester = 'Harvester',
-  Loophole = 'Loophole'
+  Loophole = 'Loophole',
+  Nailgun = 'Nailgun',
+  Ratfest = 'Ratfest'
 }
 
 export interface BarrelDef {

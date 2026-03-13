@@ -73,7 +73,7 @@ export function Destroyer(barrels: BarrelDef[]): BarrelDef[] {
 
 export function Annihilator(barrels: BarrelDef[]): BarrelDef[] {
   return barrels.map(b => clone(b, {
-    width: 40, // Width of the tank (radius 15 * 2)
+    width: 40, // Width of the tank (radius 20 * 2)
     damageMult: b.damageMult * 4.5,
     speedMult: b.speedMult * 0.7,
     penMult: b.penMult * 4.5,
@@ -125,6 +125,16 @@ export function Octo(barrels: BarrelDef[]): BarrelDef[] {
   }
   return result;
 }
+export function Gunner(barrels: BarrelDef[]): BarrelDef[] {
+  const result: BarrelDef[] = [];
+  for (const b of barrels) {
+    result.push(clone(b, {length: b.length - 5, width: b.width * 0.6, yOffset: -12, delay: 0, damageMult: b.damageMult * 0.4, bulletSizeMult: b.bulletSizeMult*0.6, reloadMult: b.reloadMult*0.5}))
+    result.push(clone(b, {length: b.length - 5, width: b.width * 0.6, yOffset: 12, delay: 0.75, damageMult: b.damageMult * 0.4, bulletSizeMult: b.bulletSizeMult*0.6, reloadMult: b.reloadMult*0.5}))
+    result.push(clone(b, {length: b.length, width: b.width * 0.6, yOffset: -6, delay: 0.25, damageMult: b.damageMult * 0.4, bulletSizeMult: b.bulletSizeMult*0.6, reloadMult: b.reloadMult*0.5}))
+    result.push(clone(b, {length: b.length, width: b.width * 0.6, yOffset: 6, delay: 0.75, damageMult: b.damageMult * 0.4, bulletSizeMult: b.bulletSizeMult*0.6, reloadMult: b.reloadMult*0.5}))
+  }
+  return result;
+}
 
 export function Fogmaker(barrels: BarrelDef[]): BarrelDef[] {
   return Quad(barrels).map(b => clone(b, {
@@ -145,7 +155,12 @@ export function Overseer(barrels: BarrelDef[]): BarrelDef[] {
 
 export function Director(barrels: BarrelDef[]): BarrelDef[] {
   return [
-    clone(baseBarrel, { angleOffset: 0, length: 30, width: 15, widthEnd: 40, type: 'drone', maxDrones: 8, reloadMult: 2, damageMult: 1.5, penMult: 1.5 })
+    clone(baseBarrel, { angleOffset: Math.PI, length: 30, width: 15, widthEnd: 40, type: 'drone', maxDrones: 2, reloadMult: 2, damageMult: 1.5, penMult: 1.5 })
+  ];
+}
+export function Hybrid(barrels: BarrelDef[]): BarrelDef[] {
+  return [
+    clone(baseBarrel, { angleOffset: Math.PI, length: 30, width: 15, widthEnd: 40, type: 'drone', maxDrones: 2, reloadMult: 2, damageMult: 1.5, penMult: 1.5 })
   ];
 }
 
@@ -495,12 +510,7 @@ export const TANK_CLASSES: Record<TankClass, BarrelDef[]> = {
   ],
   [TankClass.Pounder]: Pounder([baseBarrel]),
   [TankClass.Destroyer]: Destroyer(Pounder([baseBarrel])),
-  [TankClass.Gunner]: [
-    clone(baseBarrel, { length: 30, width: 12, yOffset: -12, delay: 0, damageMult: 0.4, bulletSizeMult: 0.6, reloadMult: 0.5 }),
-    clone(baseBarrel, { length: 30, width: 12, yOffset: 12, delay: 0.5, damageMult: 0.4, bulletSizeMult: 0.6, reloadMult: 0.5 }),
-    clone(baseBarrel, { length: 35, width: 12, yOffset: -6, delay: 0.25, damageMult: 0.4, bulletSizeMult: 0.6, reloadMult: 0.5 }),
-    clone(baseBarrel, { length: 35, width: 12, yOffset: 6, delay: 0.75, damageMult: 0.4, bulletSizeMult: 0.6, reloadMult: 0.5 })
-  ],
+  [TankClass.Gunner]: Gunner([baseBarrel]),
   [TankClass.TriAngle]: [
     // Back left/right (drawn under)
     clone(baseBarrel, { angleOffset: Math.PI * 5/6, length: 30, delay: 0.5, damageMult: 0.2, recoilMult: 2.5 }),
@@ -633,10 +643,7 @@ export const TANK_CLASSES: Record<TankClass, BarrelDef[]> = {
     clone(baseBarrel, { angleOffset: 0, length: 20, width: 12, posDist: 15, posAngle: Math.PI * 8/5, autoAim: true, delay: 0.8 })
   ],
   [TankClass.AutoGunner]: [
-    clone(baseBarrel, { length: 30, width: 12, yOffset: -12, delay: 0, damageMult: 0.4, bulletSizeMult: 0.6, reloadMult: 0.5 }),
-    clone(baseBarrel, { length: 30, width: 12, yOffset: 12, delay: 0.5, damageMult: 0.4, bulletSizeMult: 0.6, reloadMult: 0.5 }),
-    clone(baseBarrel, { length: 35, width: 12, yOffset: -6, delay: 0.25, damageMult: 0.4, bulletSizeMult: 0.6, reloadMult: 0.5 }),
-    clone(baseBarrel, { length: 35, width: 12, yOffset: 6, delay: 0.75, damageMult: 0.4, bulletSizeMult: 0.6, reloadMult: 0.5 }),
+    ...Gunner([baseBarrel]),
     clone(baseBarrel, { angleOffset: 0, length: 20, width: 12, posDist: 0, posAngle: 0, autoAim: true })
   ],
   [TankClass.Commander]: Commander([baseBarrel]),
@@ -653,7 +660,7 @@ export const TANK_CLASSES: Record<TankClass, BarrelDef[]> = {
   [TankClass.Warkwark]: Warkwark([baseBarrel]),
   [TankClass.Hybrid]: [
     ...Destroyer([baseBarrel]),
-    clone(baseBarrel, { angleOffset: Math.PI, length: 25, width: 15, widthEnd: 30, type: 'drone', maxDrones: 2, reloadMult: 2, damageMult: 1.5, penMult: 1.5 })
+    ...Hybrid([baseBarrel])
   ],
   [TankClass.Composition]: [
     ...Pounder([baseBarrel]),
@@ -730,6 +737,14 @@ export const TANK_CLASSES: Record<TankClass, BarrelDef[]> = {
    [TankClass.Executioner]: [
     ...Sniper(Hunter([baseBarrel])),
     clone(baseBarrel, { length: 15, width: 35, widthEnd: 20, xOffset: 10, visualOnly: true}),
+  ],
+   [TankClass.Nailgun]: [
+    ...Sniper(Gunner([baseBarrel])),
+    clone(baseBarrel, { length: 25, width: 40, widthEnd: 35, visualOnly: true}),
+  ],
+  [TankClass.Ratfest]: [
+    ...Gunner([baseBarrel]),
+    ...Hybrid([baseBarrel])
   ]
 };
 
@@ -754,7 +769,7 @@ export const UPGRADE_PATHS: Partial<Record<TankClass, TankClass[]>> = {
   [TankClass.MegaTrapper]: [TankClass.UltraTrapper, TankClass.TriMegaTrapper, TankClass.Loophole],
   [TankClass.Destroyer]: [TankClass.Annihilator, TankClass.Hybrid, TankClass.UltraTrapper, TankClass.AutoDestroyer, TankClass.Gustav],
   [TankClass.Composition]: [TankClass.Hybrid, TankClass.Overpounder, TankClass.AutoComposition],
-  [TankClass.Gunner]: [TankClass.Streamliner, TankClass.AutoGunner, TankClass.GunnerTrapper],
+  [TankClass.Gunner]: [TankClass.Streamliner, TankClass.AutoGunner, TankClass.GunnerTrapper, TankClass.Nailgun, TankClass. Ratfest],
   [TankClass.TriAngle]: [TankClass.Booster, TankClass.Fighter, TankClass.Trapezoid, TankClass.Surfer, TankClass.Fan],
   [TankClass.Auto3]: [TankClass.Auto5, TankClass.AutoGunner, TankClass.Mega3, TankClass.Auto4, TankClass.Sentinel, TankClass.Harvester],
   [TankClass.Wark]: [TankClass.Bulwark, TankClass.AutoWark, TankClass.Wamork, TankClass.Warkle, TankClass.Warkwark],
@@ -773,7 +788,7 @@ export const FOV_MULT: Record<number, TankClass[]> = {
     TankClass.GatlingTrapper, TankClass.Bulletstream, TankClass.AutoMachineTrapper, TankClass.TrapGuard,
     TankClass.Alloy, TankClass.GunnerTrapper, TankClass.MachineTrapper, TankClass.Sentinel,
     TankClass.AutoDestroyer, TankClass.Composition, TankClass.Overpounder, TankClass.AutoComposition,
-    TankClass.Sprayer, TankClass.AutoMegaTrapper
+    TankClass.Sprayer, TankClass.AutoMegaTrapper, TankClass.Nailgun
   ],
   1.25: [
     TankClass.Sniper, TankClass.Hunter, TankClass.Streamliner, TankClass.Overseer,
