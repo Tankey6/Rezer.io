@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { TankClass } from '../game/types.ts';
 import { UPGRADE_PATHS } from '../game/tankClasses.ts';
-import { TankPreview } from './TankPreview.ts';
+import { TankPreview } from './TankPreview.tsx';
 
 interface UpgradeTreeProps {
   onClose: () => void;
