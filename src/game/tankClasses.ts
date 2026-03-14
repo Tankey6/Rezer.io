@@ -155,7 +155,7 @@ export function Overseer(barrels: BarrelDef[]): BarrelDef[] {
 
 export function Director(barrels: BarrelDef[]): BarrelDef[] {
   return [
-    clone(baseBarrel, { angleOffset: Math.PI, length: 30, width: 15, widthEnd: 40, type: 'drone', maxDrones: 2, reloadMult: 2, damageMult: 1.5, penMult: 1.5 })
+    clone(baseBarrel, { angleOffset: 0, length: 30, width: 15, widthEnd: 40, type: 'drone', maxDrones: 8, reloadMult: 2, damageMult: 1.5, penMult: 1.5 })
   ];
 }
 export function Hybrid(barrels: BarrelDef[]): BarrelDef[] {
