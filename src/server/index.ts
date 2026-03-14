@@ -3,6 +3,12 @@ import { Game } from '../game/Game.ts';
 import { BinaryReader, BinaryWriter } from '../game/binary.ts';
 import { Vector } from '../game/Vector.ts';
 import { Player } from '../game/entities/Player.ts';
+import { Bullet } from '../game/entities/Bullet.ts';
+import { Shape } from '../game/entities/Shape.ts';
+import { EnemyTank } from '../game/entities/EnemyTank.ts';
+import { Trap } from '../game/entities/Trap.ts';
+import { Drone } from '../game/entities/Drone.ts';
+import { Crasher } from '../game/entities/Crasher.ts';
 import { calculateTotalXp } from '../game/utils.ts';
 import http from 'http';
 
@@ -190,8 +196,36 @@ export function setupMultiplayer(server: http.Server) {
       // Culling radius (slightly larger than typical FOV to avoid pop-in)
       const cullRadius = 2500;
       
+      const nearbyEntities = game.grid.getNearby(player.pos.x, player.pos.y, cullRadius);
+      
+      const visiblePlayers: Player[] = [];
+      const visibleBullets: Bullet[] = [];
+      const visibleShapes: Shape[] = [];
+      const visibleEnemies: EnemyTank[] = [];
+      const visibleTraps: Trap[] = [];
+      const visibleDrones: Drone[] = [];
+      const visibleCrashers: Crasher[] = [];
+
+      let selfIncluded = false;
+
+      for (const e of nearbyEntities) {
+        if (e instanceof Player) {
+          visiblePlayers.push(e);
+          if (e.id === playerId) selfIncluded = true;
+        }
+        else if (e instanceof Bullet) visibleBullets.push(e);
+        else if (e instanceof Shape) visibleShapes.push(e);
+        else if (e instanceof EnemyTank) visibleEnemies.push(e);
+        else if (e instanceof Trap) visibleTraps.push(e);
+        else if (e instanceof Drone) visibleDrones.push(e);
+        else if (e instanceof Crasher) visibleCrashers.push(e);
+      }
+
+      if (!selfIncluded) {
+        visiblePlayers.push(player);
+      }
+      
       // Players
-      const visiblePlayers = Array.from(game.players.values()).filter(p => p.pos.dist(player.pos) < cullRadius || p.id === playerId);
       writer.writeUint16(visiblePlayers.length);
       for (const p of visiblePlayers) {
         const input = game.inputs.get(p.id);
@@ -230,7 +264,6 @@ export function setupMultiplayer(server: http.Server) {
       }
       
       // Bullets
-      const visibleBullets = game.bullets.filter(b => b.pos.dist(player.pos) < cullRadius);
       writer.writeUint16(visibleBullets.length);
       for (const b of visibleBullets) {
         writer.writeUint32(b.id);
@@ -243,7 +276,6 @@ export function setupMultiplayer(server: http.Server) {
       }
       
       // Shapes
-      const visibleShapes = game.shapes.filter(s => s.pos.dist(player.pos) < cullRadius);
       writer.writeUint16(visibleShapes.length);
       for (const s of visibleShapes) {
         writer.writeUint32(s.id);
@@ -258,7 +290,6 @@ export function setupMultiplayer(server: http.Server) {
       }
       
       // Enemies
-      const visibleEnemies = game.enemies.filter(e => e.pos.dist(player.pos) < cullRadius);
       writer.writeUint16(visibleEnemies.length);
       for (const e of visibleEnemies) {
         writer.writeUint32(e.id);
@@ -280,7 +311,6 @@ export function setupMultiplayer(server: http.Server) {
       }
       
       // Traps
-      const visibleTraps = game.traps.filter(t => t.pos.dist(player.pos) < cullRadius);
       writer.writeUint16(visibleTraps.length);
       for (const t of visibleTraps) {
         writer.writeUint32(t.id);
@@ -292,7 +322,6 @@ export function setupMultiplayer(server: http.Server) {
       }
       
       // Drones
-      const visibleDrones = game.drones.filter(d => d.pos.dist(player.pos) < cullRadius);
       writer.writeUint16(visibleDrones.length);
       for (const d of visibleDrones) {
         writer.writeUint32(d.id);
@@ -304,7 +333,6 @@ export function setupMultiplayer(server: http.Server) {
       }
       
       // Crashers
-      const visibleCrashers = game.crashers.filter(c => c.pos.dist(player.pos) < cullRadius);
       writer.writeUint16(visibleCrashers.length);
       for (const c of visibleCrashers) {
         writer.writeUint32(c.id);

@@ -9,6 +9,7 @@ import { EnemyTank } from './entities/EnemyTank.ts';
 import { ShapeType, TankClass, EntityType } from './types.ts';
 import { TANK_CLASSES, getFovMult } from './tankClasses.ts';
 import { Entity } from './entities/Entity.ts';
+import { SpatialGrid } from './SpatialGrid.ts';
 import { BinaryReader, BinaryWriter } from './binary.ts';
 import { calculateTotalXp } from './utils.ts';
 
@@ -39,6 +40,7 @@ export class Game {
   shapes: Shape[] = [];
   crashers: Crasher[] = [];
   enemies: EnemyTank[] = [];
+  grid: SpatialGrid = new SpatialGrid(500);
   enemyMap: Map<number, EnemyTank> = new Map();
   bulletMap: Map<number, Bullet> = new Map();
   trapMap: Map<number, Trap> = new Map();
@@ -1459,369 +1461,369 @@ export class Game {
   }
 
   checkCollisions(dt: number) {
-    // Bullet vs Shape
-    for (const b of this.bullets) {
-      for (const s of this.shapes) {
-        if (!b.dead && !s.dead && b.pos.dist(s.pos) < b.radius + s.radius) {
-          b.isDamaging = true;
-          s.takeDamage(b.damage * dt);
-          
-          if (s.shapeType === ShapeType.ROCK) {
-            const normal = b.pos.sub(s.pos).normalize();
-            const dot = b.vel.dot(normal);
-            if (dot < 0) {
-              b.vel = b.vel.sub(normal.mult(2 * dot)).mult(0.8);
-            }
-          } else {
-            const dir = s.pos.sub(b.pos).normalize();
-            s.vel = s.vel.add(dir.mult(100 * dt));
-          }
+    this.grid.clear();
+    for (const p of this.players.values()) this.grid.insert(p);
+    for (const b of this.bullets) this.grid.insert(b);
+    for (const t of this.traps) this.grid.insert(t);
+    for (const d of this.drones) this.grid.insert(d);
+    for (const s of this.shapes) this.grid.insert(s);
+    for (const c of this.crashers) this.grid.insert(c);
+    for (const e of this.enemies) this.grid.insert(e);
 
-          if (s.dead) this.giveXp(b.ownerId, s.xpValue);
+    // Bullet collisions
+    for (const b of this.bullets) {
+      if (b.dead) continue;
+      const nearby = this.grid.getNearby(b.pos.x, b.pos.y, b.radius + 150);
+      for (const other of nearby) {
+        if (other.dead || other === b) continue;
+        
+        if (other instanceof Shape) {
+          const s = other;
+          if (b.pos.dist(s.pos) < b.radius + s.radius) {
+            b.isDamaging = true;
+            s.takeDamage(b.damage * dt);
+            
+            if (s.shapeType === ShapeType.ROCK) {
+              const normal = b.pos.sub(s.pos).normalize();
+              const dot = b.vel.dot(normal);
+              if (dot < 0) {
+                b.vel = b.vel.sub(normal.mult(2 * dot)).mult(0.8);
+              }
+            } else {
+              const dir = s.pos.sub(b.pos).normalize();
+              s.vel = s.vel.add(dir.mult(100 * dt));
+            }
+
+            if (s.dead) this.giveXp(b.ownerId, s.xpValue);
+          }
+        } else if (other instanceof Crasher) {
+          const c = other;
+          if (b.pos.dist(c.pos) < b.radius + c.radius) {
+            b.isDamaging = true;
+            c.takeDamage(b.damage * dt);
+            if (c.dead) this.giveXp(b.ownerId, 15);
+          }
+        } else if (other instanceof EnemyTank) {
+          const e = other;
+          if (b.ownerId !== e.id && b.pos.dist(e.pos) < b.radius + e.radius) {
+            b.isDamaging = true;
+            e.takeDamage(b.damage * dt);
+            if (e.dead) this.giveXp(b.ownerId, e.level * 50);
+          }
+        } else if (other instanceof Player) {
+          const p = other;
+          if (!p.isInvincible && b.ownerId !== p.id && b.pos.dist(p.pos) < b.radius + p.radius) {
+            b.isDamaging = true;
+            p.takeDamage(b.damage * dt);
+          }
+        } else if (other instanceof Drone) {
+          const d = other;
+          if (b.ownerId !== d.ownerId && b.pos.dist(d.pos) < b.radius + d.radius) {
+            b.isDamaging = true;
+            d.penetration -= b.damage * dt * 0.1;
+          }
+        } else if (other instanceof Trap) {
+          const t = other;
+          if (b.ownerId !== t.ownerId && b.pos.dist(t.pos) < b.radius + t.radius) {
+            b.penetration -= t.damage * dt * 0.5;
+            t.penetration -= b.damage * dt * 0.01;
+            b.isDamaging = true;
+          }
         }
       }
     }
 
-    // Traps vs Shapes
+    // Trap collisions
     for (const t of this.traps) {
-      for (const s of this.shapes) {
-        if (!t.dead && !s.dead && t.pos.dist(s.pos) < t.radius + s.radius) {
-          t.isDamaging = true;
-          s.takeDamage(t.damage * dt);
-          
-          if (s.shapeType === ShapeType.ROCK) {
-            const normal = t.pos.sub(s.pos).normalize();
-            const dot = t.vel.dot(normal);
-            if (dot < 0) {
-              t.vel = t.vel.sub(normal.mult(2 * dot)).mult(0.8);
+      if (t.dead) continue;
+      const nearby = this.grid.getNearby(t.pos.x, t.pos.y, t.radius + 150);
+      for (const other of nearby) {
+        if (other.dead || other === t) continue;
+        
+        if (other instanceof Shape) {
+          const s = other;
+          if (t.pos.dist(s.pos) < t.radius + s.radius) {
+            t.isDamaging = true;
+            s.takeDamage(t.damage * dt);
+            
+            if (s.shapeType === ShapeType.ROCK) {
+              const normal = t.pos.sub(s.pos).normalize();
+              const dot = t.vel.dot(normal);
+              if (dot < 0) {
+                t.vel = t.vel.sub(normal.mult(2 * dot)).mult(0.8);
+              }
+            } else {
+              const dir = s.pos.sub(t.pos).normalize();
+              s.vel = s.vel.add(dir.mult(100 * dt));
             }
-          } else {
-            const dir = s.pos.sub(t.pos).normalize();
-            s.vel = s.vel.add(dir.mult(100 * dt));
+
+            if (s.dead) this.giveXp(t.ownerId, s.xpValue);
           }
+        } else if (other instanceof Crasher) {
+          const c = other;
+          if (t.pos.dist(c.pos) < t.radius + c.radius) {
+            t.isDamaging = true;
+            c.takeDamage(t.damage * dt);
+            const dir = c.pos.sub(t.pos).normalize();
+            c.vel = c.vel.add(dir.mult(100 * dt));
+            if (c.dead) this.giveXp(t.ownerId, 15);
+          }
+        } else if (other instanceof EnemyTank) {
+          const e = other;
+          if (t.ownerId !== e.id && t.pos.dist(e.pos) < t.radius + e.radius) {
+            t.isDamaging = true;
+            e.takeDamage(t.damage * dt);
+            const dir = e.pos.sub(t.pos).normalize();
+            e.vel = e.vel.add(dir.mult(100 * dt));
+            if (e.dead) this.giveXp(t.ownerId, e.level * 50);
+          }
+        } else if (other instanceof Player) {
+          const p = other;
+          if (!p.isInvincible && t.ownerId !== p.id && t.pos.dist(p.pos) < t.radius + p.radius) {
+            t.isDamaging = true;
+            p.takeDamage(t.damage * dt);
+            const dist = t.pos.dist(p.pos);
+            const minDist = t.radius + p.radius;
+            const overlap = minDist - dist;
+            const dir = p.pos.sub(t.pos).normalize();
+            
+            p.pos = p.pos.add(dir.mult(overlap * 0.8));
+            t.pos = t.pos.sub(dir.mult(overlap * 0.2));
+            
+            p.vel = p.vel.add(dir.mult(50 * dt));
+            t.vel = t.vel.sub(dir.mult(50 * dt));
+          }
+        } else if (other instanceof Drone) {
+          const d = other;
+          if (t.ownerId !== d.ownerId && t.pos.dist(d.pos) < t.radius + d.radius) {
+            t.isDamaging = true;
+            d.penetration -= t.damage * dt * 0.1;
+            const dist = t.pos.dist(d.pos);
+            const minDist = t.radius + d.radius;
+            const overlap = minDist - dist;
+            const dir = d.pos.sub(t.pos).normalize();
+            
+            d.pos = d.pos.add(dir.mult(overlap * 0.8));
+            t.pos = t.pos.sub(dir.mult(overlap * 0.2));
+            
+            d.vel = d.vel.add(dir.mult(50 * dt));
+            t.vel = t.vel.sub(dir.mult(50 * dt));
+          }
+        } else if (other instanceof Trap && other.id > t.id) {
+          const t2 = other;
+          const dist = t.pos.dist(t2.pos);
+          const minDist = t.radius + t2.radius;
+          if (dist < minDist && dist > 0) {
+            const overlap = minDist - dist;
+            const dir = t2.pos.sub(t.pos).normalize();
+            
+            t.pos = t.pos.sub(dir.mult(overlap * 0.5));
+            t2.pos = t2.pos.add(dir.mult(overlap * 0.5));
 
-          if (s.dead) this.giveXp(t.ownerId, s.xpValue);
-        }
-      }
-      // Traps vs Crashers
-      for (const c of this.crashers) {
-        if (!t.dead && !c.dead && t.pos.dist(c.pos) < t.radius + c.radius) {
-          t.isDamaging = true;
-          c.takeDamage(t.damage * dt);
-          const dir = c.pos.sub(t.pos).normalize();
-          c.vel = c.vel.add(dir.mult(100 * dt));
-
-          if (c.dead) this.giveXp(t.ownerId, 15);
-        }
-      }
-      // Traps vs Enemies
-      for (const e of this.enemies) {
-        if (!t.dead && !e.dead && t.ownerId !== e.id && t.pos.dist(e.pos) < t.radius + e.radius) {
-          t.isDamaging = true;
-          e.takeDamage(t.damage * dt);
-          const dir = e.pos.sub(t.pos).normalize();
-          e.vel = e.vel.add(dir.mult(100 * dt));
-
-          if (e.dead) this.giveXp(t.ownerId, e.level * 50);
-        }
-      }
-      // Traps vs Player
-      for (const p of this.players.values()) {
-        if (!t.dead && !p.dead && !p.isInvincible && t.ownerId !== p.id && t.pos.dist(p.pos) < t.radius + p.radius) {
-          t.isDamaging = true;
-          p.takeDamage(t.damage * dt);
-          const dist = t.pos.dist(p.pos);
-          const minDist = t.radius + p.radius;
-          const overlap = minDist - dist;
-          const dir = p.pos.sub(t.pos).normalize();
-          
-          // Block player (push out)
-          p.pos = p.pos.add(dir.mult(overlap * 0.8));
-          // Slowly push trap
-          t.pos = t.pos.sub(dir.mult(overlap * 0.2));
-          
-          p.vel = p.vel.add(dir.mult(50 * dt));
-          t.vel = t.vel.sub(dir.mult(50 * dt));
-        }
-      }
-      // Traps vs Drones
-      for (const d of this.drones) {
-        if (!t.dead && !d.dead && t.ownerId !== d.ownerId && t.pos.dist(d.pos) < t.radius + d.radius) {
-          t.isDamaging = true;
-          d.penetration -= t.damage * dt * 0.1;
-          const dist = t.pos.dist(d.pos);
-          const minDist = t.radius + d.radius;
-          const overlap = minDist - dist;
-          const dir = d.pos.sub(t.pos).normalize();
-          
-          // Block drone
-          d.pos = d.pos.add(dir.mult(overlap * 0.8));
-          // Slowly push trap
-          t.pos = t.pos.sub(dir.mult(overlap * 0.2));
-          
-          d.vel = d.vel.add(dir.mult(50 * dt));
-          t.vel = t.vel.sub(dir.mult(50 * dt));
-        }
-      }
-    }
-    
-    // Traps vs Traps
-    for (let i = 0; i < this.traps.length; i++) {
-      for (let j = i + 1; j < this.traps.length; j++) {
-        const t1 = this.traps[i];
-        const t2 = this.traps[j];
-        const dist = t1.pos.dist(t2.pos);
-        const minDist = t1.radius + t2.radius;
-        if (dist < minDist && dist > 0) {
-          const overlap = minDist - dist;
-          const dir = t2.pos.sub(t1.pos).normalize();
-          
-          t1.pos = t1.pos.sub(dir.mult(overlap * 0.5));
-          t2.pos = t2.pos.add(dir.mult(overlap * 0.5));
-
-          // Traps wear themselves out faster if touching other traps
-          t1.penetration -= 5 * dt;
-          t2.penetration -= 5 * dt;
-          
-          // Calculate relative velocity
-          const relVel = t1.vel.sub(t2.vel);
-          const speed = relVel.dot(dir);
-          
-          // Only bounce if moving towards each other
-          if (speed > 0) {
-            const bounce = dir.mult(speed * 0.5);
-            t1.vel = t1.vel.sub(bounce);
-            t2.vel = t2.vel.add(bounce);
+            t.penetration -= 5 * dt;
+            t2.penetration -= 5 * dt;
+            
+            const relVel = t.vel.sub(t2.vel);
+            const speed = relVel.dot(dir);
+            
+            if (speed > 0) {
+              const bounce = dir.mult(speed * 0.5);
+              t.vel = t.vel.sub(bounce);
+              t2.vel = t2.vel.add(bounce);
+            }
           }
         }
       }
     }
 
-    // Drones vs Shapes
+    // Drone collisions
     for (const d of this.drones) {
-      for (const s of this.shapes) {
-        if (!d.dead && !s.dead && d.pos.dist(s.pos) < d.radius + s.radius) {
-          d.isDamaging = true;
-          s.takeDamage(d.damage * dt);
-          
-          const dist = d.pos.dist(s.pos);
-          const minDist = d.radius + s.radius;
-          const overlap = minDist - dist;
-          const dir = d.pos.sub(s.pos).normalize();
-          
-          // Push out
-          d.pos = d.pos.add(dir.mult(overlap));
-          
-          const pushForce = s.isAlpha ? 10 : 100;
-          if (s.shapeType !== ShapeType.ROCK) {
-            s.vel = s.vel.add(dir.mult(pushForce * dt));
+      if (d.dead) continue;
+      const nearby = this.grid.getNearby(d.pos.x, d.pos.y, d.radius + 150);
+      for (const other of nearby) {
+        if (other.dead || other === d) continue;
+        
+        if (other instanceof Shape) {
+          const s = other;
+          if (d.pos.dist(s.pos) < d.radius + s.radius) {
+            d.isDamaging = true;
+            s.takeDamage(d.damage * dt);
+            
+            const dist = d.pos.dist(s.pos);
+            const minDist = d.radius + s.radius;
+            const overlap = minDist - dist;
+            const dir = d.pos.sub(s.pos).normalize();
+            
+            d.pos = d.pos.add(dir.mult(overlap));
+            
+            const pushForce = s.isAlpha ? 10 : 100;
+            if (s.shapeType !== ShapeType.ROCK) {
+              s.vel = s.vel.add(dir.mult(pushForce * dt));
+            }
+            d.vel = d.vel.sub(dir.mult(pushForce * dt));
+
+            if (s.dead) this.giveXp(d.ownerId, s.xpValue);
           }
-          d.vel = d.vel.sub(dir.mult(pushForce * dt));
-
-          if (s.dead) this.giveXp(d.ownerId, s.xpValue);
-        }
-      }
-      // Drones vs Crashers
-      for (const c of this.crashers) {
-        if (!d.dead && !c.dead && d.pos.dist(c.pos) < d.radius + c.radius) {
-          d.isDamaging = true;
-          c.takeDamage(d.damage * dt);
-          const dir = c.pos.sub(d.pos).normalize();
-          c.vel = c.vel.add(dir.mult(100 * dt));
-          d.vel = d.vel.sub(dir.mult(100 * dt));
-
-          if (c.dead) this.giveXp(d.ownerId, 15);
-        }
-      }
-      // Drones vs Enemies
-      for (const e of this.enemies) {
-        if (!d.dead && !e.dead && d.ownerId !== e.id && d.pos.dist(e.pos) < d.radius + e.radius) {
-          d.isDamaging = true;
-          e.takeDamage(d.damage * dt);
-          const dir = e.pos.sub(d.pos).normalize();
-          e.vel = e.vel.add(dir.mult(100 * dt));
-          d.vel = d.vel.sub(dir.mult(100 * dt));
-
-          if (e.dead) this.giveXp(d.ownerId, e.level * 50);
-        }
-      }
-      // Drones vs Player
-      for (const p of this.players.values()) {
-        if (!d.dead && !p.dead && !p.isInvincible && d.ownerId !== p.id && d.pos.dist(p.pos) < d.radius + p.radius) {
-          d.isDamaging = true;
-          p.takeDamage(d.damage * dt);
-          const dir = p.pos.sub(d.pos).normalize();
-          p.vel = p.vel.add(dir.mult(100 * dt));
-          d.vel = d.vel.sub(dir.mult(100 * dt));
-        }
-      }
-    }
-
-    // Drones vs Drones
-    for (let i = 0; i < this.drones.length; i++) {
-      for (let j = i + 1; j < this.drones.length; j++) {
-        const d1 = this.drones[i];
-        const d2 = this.drones[j];
-        const dist = d1.pos.dist(d2.pos);
-        const minDist = d1.radius + d2.radius;
-        if (dist < minDist) {
-          const overlap = minDist - dist;
-          const dir = d2.pos.sub(d1.pos).normalize();
-          
-          d1.pos = d1.pos.sub(dir.mult(overlap * 0.5));
-          d2.pos = d2.pos.add(dir.mult(overlap * 0.5));
-          
-          d1.vel = d1.vel.sub(dir.mult(10));
-          d2.vel = d2.vel.add(dir.mult(10));
-        }
-      }
-    }
-
-    // Player vs Shape
-    for (const p of this.players.values()) {
-      const bodyDamage = 400 + p.stats.bodyDamage * 200;
-      for (const s of this.shapes) {
-        if (!s.dead && !p.dead && !p.isInvincible && p.pos.dist(s.pos) < p.radius + s.radius) {
-          s.takeDamage(bodyDamage * dt);
-          p.takeDamage(s.damage * dt);
-          
-          const dist = p.pos.dist(s.pos);
-          const minDist = p.radius + s.radius;
-          const overlap = minDist - dist;
-          const dir = p.pos.sub(s.pos).normalize();
-          
-          // Push out
-          p.pos = p.pos.add(dir.mult(overlap));
-          
-          const pushForce = s.isAlpha ? 15 : 150;
-          p.vel = p.vel.add(dir.mult(pushForce * dt));
-          if (s.shapeType !== ShapeType.ROCK) {
-            s.vel = s.vel.sub(dir.mult(pushForce * dt));
+        } else if (other instanceof Crasher) {
+          const c = other;
+          if (d.pos.dist(c.pos) < d.radius + c.radius) {
+            d.isDamaging = true;
+            c.takeDamage(d.damage * dt);
+            const dir = c.pos.sub(d.pos).normalize();
+            c.vel = c.vel.add(dir.mult(100 * dt));
+            d.vel = d.vel.sub(dir.mult(100 * dt));
+            if (c.dead) this.giveXp(d.ownerId, 15);
           }
-
-          if (s.dead) p.gainXp(s.xpValue);
+        } else if (other instanceof EnemyTank) {
+          const e = other;
+          if (d.ownerId !== e.id && d.pos.dist(e.pos) < d.radius + e.radius) {
+            d.isDamaging = true;
+            e.takeDamage(d.damage * dt);
+            const dir = e.pos.sub(d.pos).normalize();
+            e.vel = e.vel.add(dir.mult(100 * dt));
+            d.vel = d.vel.sub(dir.mult(100 * dt));
+            if (e.dead) this.giveXp(d.ownerId, e.level * 50);
+          }
+        } else if (other instanceof Player) {
+          const p = other;
+          if (!p.isInvincible && d.ownerId !== p.id && d.pos.dist(p.pos) < d.radius + p.radius) {
+            d.isDamaging = true;
+            p.takeDamage(d.damage * dt);
+            const dir = p.pos.sub(d.pos).normalize();
+            p.vel = p.vel.add(dir.mult(100 * dt));
+            d.vel = d.vel.sub(dir.mult(100 * dt));
+          }
+        } else if (other instanceof Drone && other.id > d.id) {
+          const d2 = other;
+          const dist = d.pos.dist(d2.pos);
+          const minDist = d.radius + d2.radius;
+          if (dist < minDist && dist > 0) {
+            const overlap = minDist - dist;
+            const dir = d2.pos.sub(d.pos).normalize();
+            
+            d.pos = d.pos.sub(dir.mult(overlap * 0.5));
+            d2.pos = d2.pos.add(dir.mult(overlap * 0.5));
+            
+            d.vel = d.vel.sub(dir.mult(10));
+            d2.vel = d2.vel.add(dir.mult(10));
+          }
         }
       }
     }
 
-    // Player vs Crasher
+    // Player collisions
     for (const p of this.players.values()) {
+      if (p.dead) continue;
       const bodyDamage = 400 + p.stats.bodyDamage * 200;
-      for (const c of this.crashers) {
-        if (!c.dead && !p.dead && !p.isInvincible && p.pos.dist(c.pos) < p.radius + c.radius) {
-          c.takeDamage(bodyDamage * dt);
-          p.takeDamage(c.damage * dt);
-          const dir = p.pos.sub(c.pos).normalize();
-          p.vel = p.vel.add(dir.mult(200 * dt));
-          c.vel = c.vel.sub(dir.mult(200 * dt));
+      const nearby = this.grid.getNearby(p.pos.x, p.pos.y, p.radius + 150);
+      for (const other of nearby) {
+        if (other.dead || other === p) continue;
+        
+        if (other instanceof Shape) {
+          const s = other;
+          if (!p.isInvincible && p.pos.dist(s.pos) < p.radius + s.radius) {
+            s.takeDamage(bodyDamage * dt);
+            p.takeDamage(s.damage * dt);
+            
+            const dist = p.pos.dist(s.pos);
+            const minDist = p.radius + s.radius;
+            const overlap = minDist - dist;
+            const dir = p.pos.sub(s.pos).normalize();
+            
+            p.pos = p.pos.add(dir.mult(overlap));
+            
+            const pushForce = s.isAlpha ? 15 : 150;
+            p.vel = p.vel.add(dir.mult(pushForce * dt));
+            if (s.shapeType !== ShapeType.ROCK) {
+              s.vel = s.vel.sub(dir.mult(pushForce * dt));
+            }
 
-          if (c.dead) p.gainXp(15);
+            if (s.dead) p.gainXp(s.xpValue);
+          }
+        } else if (other instanceof Crasher) {
+          const c = other;
+          if (!p.isInvincible && p.pos.dist(c.pos) < p.radius + c.radius) {
+            c.takeDamage(bodyDamage * dt);
+            p.takeDamage(c.damage * dt);
+            const dir = p.pos.sub(c.pos).normalize();
+            p.vel = p.vel.add(dir.mult(200 * dt));
+            c.vel = c.vel.sub(dir.mult(200 * dt));
+
+            if (c.dead) p.gainXp(15);
+          }
         }
       }
     }
 
-    // Crasher vs Shape
+    // Crasher collisions
     for (const c of this.crashers) {
-      for (const s of this.shapes) {
-        if (!c.dead && !s.dead && c.pos.dist(s.pos) < c.radius + s.radius) {
-          const dist = c.pos.dist(s.pos);
-          const minDist = c.radius + s.radius;
-          const overlap = minDist - dist;
-          const dir = c.pos.sub(s.pos).normalize();
-          
-          // Push out
-          c.pos = c.pos.add(dir.mult(overlap));
-          
-          if (s.shapeType !== ShapeType.ROCK) {
-            s.vel = s.vel.add(dir.mult(100 * dt));
-            c.vel = c.vel.sub(dir.mult(100 * dt));
+      if (c.dead) continue;
+      const nearby = this.grid.getNearby(c.pos.x, c.pos.y, c.radius + 150);
+      for (const other of nearby) {
+        if (other.dead || other === c) continue;
+        
+        if (other instanceof Shape) {
+          const s = other;
+          if (c.pos.dist(s.pos) < c.radius + s.radius) {
+            const dist = c.pos.dist(s.pos);
+            const minDist = c.radius + s.radius;
+            const overlap = minDist - dist;
+            const dir = c.pos.sub(s.pos).normalize();
+            
+            c.pos = c.pos.add(dir.mult(overlap));
+            
+            if (s.shapeType !== ShapeType.ROCK) {
+              s.vel = s.vel.add(dir.mult(100 * dt));
+              c.vel = c.vel.sub(dir.mult(100 * dt));
+            }
           }
         }
       }
     }
 
-    // Bullet vs Crasher/Enemy
-    for (const b of this.bullets) {
-      for (const c of this.crashers) {
-        if (!b.dead && !c.dead && b.pos.dist(c.pos) < b.radius + c.radius) {
-          b.isDamaging = true;
-          c.takeDamage(b.damage * dt);
-
-          if (c.dead) this.giveXp(b.ownerId, 15);
-        }
-      }
-      for (const e of this.enemies) {
-        if (!b.dead && !e.dead && b.ownerId !== e.id && b.pos.dist(e.pos) < b.radius + e.radius) {
-          b.isDamaging = true;
-          e.takeDamage(b.damage * dt);
-
-          if (e.dead) this.giveXp(b.ownerId, e.level * 50);
-        }
-      }
-      // Bullet vs Player
-      for (const p of this.players.values()) {
-        if (!b.dead && !p.dead && !p.isInvincible && b.ownerId !== p.id && b.pos.dist(p.pos) < b.radius + p.radius) {
-          b.isDamaging = true;
-          p.takeDamage(b.damage * dt);
-        }
-      }
-      // Bullet vs Drones
-      for (const d of this.drones) {
-        if (!b.dead && !d.dead && b.ownerId !== d.ownerId && b.pos.dist(d.pos) < b.radius + d.radius) {
-          b.isDamaging = true;
-          d.penetration -= b.damage * dt * 0.1; // Drones are sturdy but bullets can wear them down
-        }
-      }
-      // Bullet vs Traps
-      for (const t of this.traps) {
-        if (!b.dead && !t.dead && b.ownerId !== t.ownerId && b.pos.dist(t.pos) < b.radius + t.radius) {
-          // Traps take away tons of penetration from bullets
-          b.penetration -= t.damage * dt * 0.5;
-          // Traps are very sturdy against bullets
-          t.penetration -= b.damage * dt * 0.01;
-          b.isDamaging = true;
-        }
-      }
-    }
-
-    // Enemy vs Shape
+    // Enemy collisions
     for (const e of this.enemies) {
-      for (const s of this.shapes) {
-        if (!e.dead && !s.dead && e.pos.dist(s.pos) < e.radius + s.radius) {
-          s.takeDamage(100 * dt);
-          e.takeDamage(s.damage * dt);
+      if (e.dead) continue;
+      const nearby = this.grid.getNearby(e.pos.x, e.pos.y, e.radius + 150);
+      for (const other of nearby) {
+        if (other.dead || other === e) continue;
+        
+        if (other instanceof Shape) {
+          const s = other;
+          if (e.pos.dist(s.pos) < e.radius + s.radius) {
+            s.takeDamage(100 * dt);
+            e.takeDamage(s.damage * dt);
 
-          const dist = e.pos.dist(s.pos);
-          const minDist = e.radius + s.radius;
-          const overlap = minDist - dist;
-          const dir = e.pos.sub(s.pos).normalize();
-          
-          // Push out
-          e.pos = e.pos.add(dir.mult(overlap));
-          
-          const pushForce = s.isAlpha ? 15 : 150;
-          e.vel = e.vel.add(dir.mult(pushForce * dt));
-          if (s.shapeType !== ShapeType.ROCK) {
-            s.vel = s.vel.sub(dir.mult(pushForce * dt));
+            const dist = e.pos.dist(s.pos);
+            const minDist = e.radius + s.radius;
+            const overlap = minDist - dist;
+            const dir = e.pos.sub(s.pos).normalize();
+            
+            e.pos = e.pos.add(dir.mult(overlap));
+            
+            const pushForce = s.isAlpha ? 15 : 150;
+            e.vel = e.vel.add(dir.mult(pushForce * dt));
+            if (s.shapeType !== ShapeType.ROCK) {
+              s.vel = s.vel.sub(dir.mult(pushForce * dt));
+            }
+
+            if (s.dead) e.gainXp(s.xpValue);
           }
-
-          if (s.dead) e.gainXp(s.xpValue);
-        }
-      }
-      // Enemy vs Enemy
-      for (const other of this.enemies) {
-        if (e !== other && !e.dead && !other.dead && e.pos.dist(other.pos) < e.radius + other.radius) {
-          const bodyDamageE = 400 + e.stats.bodyDamage * 200;
-          const bodyDamageOther = 400 + other.stats.bodyDamage * 200;
-          other.takeDamage(bodyDamageE * dt);
-          e.takeDamage(bodyDamageOther * dt);
-          
-          const dir = e.pos.sub(other.pos).normalize();
-          e.vel = e.vel.add(dir.mult(150 * dt));
-          other.vel = other.vel.sub(dir.mult(150 * dt));
-          
-          if (other.dead) e.gainXp(other.level * 50);
-          if (e.dead) other.gainXp(e.level * 50);
+        } else if (other instanceof EnemyTank && other.id > e.id) {
+          const otherE = other;
+          if (e.pos.dist(otherE.pos) < e.radius + otherE.radius) {
+            const bodyDamageE = 400 + e.stats.bodyDamage * 200;
+            const bodyDamageOther = 400 + otherE.stats.bodyDamage * 200;
+            otherE.takeDamage(bodyDamageE * dt);
+            e.takeDamage(bodyDamageOther * dt);
+            
+            const dir = e.pos.sub(otherE.pos).normalize();
+            e.vel = e.vel.add(dir.mult(150 * dt));
+            otherE.vel = otherE.vel.sub(dir.mult(150 * dt));
+            
+            if (otherE.dead) e.gainXp(otherE.level * 50);
+            if (e.dead) otherE.gainXp(e.level * 50);
+          }
         }
       }
     }

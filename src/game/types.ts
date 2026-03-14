@@ -13,6 +13,7 @@ export enum ShapeType {
   TRIANGLE,
   PENTAGON,
   HEXAGON,
+  HEPTAGON,
   ALPHA_PENTAGON,
   ROCK
 }
@@ -102,7 +103,12 @@ export enum TankClass {
   Harvester = 'Harvester',
   Loophole = 'Loophole',
   Nailgun = 'Nailgun',
-  Ratfest = 'Ratfest'
+  Ratfest = 'Ratfest',
+  AutoOverseer = 'Auto-Overseer',
+  AutoCruiser = 'Auto-Cruiser',
+  Shipyard = 'Shipyard',
+  BigCheese = 'Big Cheese',
+  Ternary = 'Ternary'
 }
 
 export interface BarrelDef {

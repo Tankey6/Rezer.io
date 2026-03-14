@@ -62,7 +62,7 @@ export function Pounder(barrels: BarrelDef[]): BarrelDef[] {
 
 export function Destroyer(barrels: BarrelDef[]): BarrelDef[] {
   return barrels.map(b => clone(b, {
-    width: 32,
+    width: b.width + 7,
     damageMult: b.damageMult * 3,
     speedMult: b.speedMult * 0.8,
     penMult: b.penMult * 3,
@@ -154,10 +154,27 @@ export function Overseer(barrels: BarrelDef[]): BarrelDef[] {
 }
 
 export function Director(barrels: BarrelDef[]): BarrelDef[] {
-  return [
-    clone(baseBarrel, { angleOffset: 0, length: 30, width: 15, widthEnd: 40, type: 'drone', maxDrones: 8, reloadMult: 2, damageMult: 1.5, penMult: 1.5 })
-  ];
+  return barrels.map(b => clone(b, {
+    length: b.length-5,
+    width: b.width-5,
+    widthEnd: b.width+20,
+    damageMult: b.damageMult * 1.5,
+    penMult: b.penMult * 1.5,
+    reloadMult: b.reloadMult * 2,
+    maxDrones: 8,
+    type: 'drone'
+  }));
 }
+
+
+export function BigCheese(barrels: BarrelDef[]): BarrelDef[] {
+  return barrels.map(b => clone(b, {
+    reloadMult: b.reloadMult * 0.75,
+    maxDrones: 1,
+    type: 'drone'
+  }));
+}
+
 export function Hybrid(barrels: BarrelDef[]): BarrelDef[] {
   return [
     clone(baseBarrel, { angleOffset: Math.PI, length: 30, width: 15, widthEnd: 40, type: 'drone', maxDrones: 2, reloadMult: 2, damageMult: 1.5, penMult: 1.5 })
@@ -745,6 +762,26 @@ export const TANK_CLASSES: Record<TankClass, BarrelDef[]> = {
   [TankClass.Ratfest]: [
     ...Gunner([baseBarrel]),
     ...Hybrid([baseBarrel])
+  ],
+  [TankClass.AutoOverseer]: [
+    ...Overseer([baseBarrel]),
+    clone(baseBarrel, { angleOffset: 0, length: 20, width: 12, posDist: 0, posAngle: 0, autoAim: true })
+  ],
+  [TankClass.AutoCruiser]: [
+    ...Cruiser([baseBarrel]),
+    clone(baseBarrel, { angleOffset: 0, length: 20, width: 12, posDist: 0, posAngle: 0, autoAim: true })
+  ],
+  [TankClass.Shipyard]: [
+    ...MachineGun(Cruiser([baseBarrel]))
+  ],
+  [TankClass.BigCheese]: [
+    ...BigCheese(Director(Destroyer(Pounder([baseBarrel]))))
+  ],
+  [TankClass.Ternary]: [
+    baseBarrel,
+    clone(baseBarrel, { angleOffset: Math.PI, length: 25, width: 15, visualOnly: true }),
+    clone(baseBarrel, { angleOffset: Math.PI, length: 15, width: 15, widthEnd: 35, xOffset: 25, type: 'trap', reloadMult: 1.5, damageMult: 2, penMult: 2 }),
+    ...Hybrid([baseBarrel]),
   ]
 };
 
@@ -755,25 +792,25 @@ export const UPGRADE_PATHS: Partial<Record<TankClass, TankClass[]>> = {
   [TankClass.MachineGun]: [TankClass.Gunner, TankClass.MachineTrapper, TankClass.GatlingGun],
   [TankClass.Pounder]: [TankClass.Destroyer, TankClass.MegaTrapper, TankClass.Composition, TankClass.Howitzer],
   [TankClass.FlankGuard]: [TankClass.TriAngle, TankClass.QuadTank, TankClass.TwinFlank, TankClass.Auto3, TankClass.TriTrapper, TankClass.TrapGuard],
-  [TankClass.Director]: [TankClass.Overseer, TankClass.Cruiser, TankClass.Manager],
+  [TankClass.Director]: [TankClass.Overseer, TankClass.Cruiser, TankClass.Manager, TankClass.BigCheese],
   [TankClass.Trapper]: [TankClass.TriTrapper, TankClass.MegaTrapper, TankClass.Overtrapper, TankClass.Wark, TankClass.TrapGuard, TankClass.MachineTrapper],
   
   [TankClass.TripleShot]: [TankClass.Triplet, TankClass.PentaShot, TankClass.Spreadshot, TankClass.DoubleTriple, TankClass.Wamork],
   [TankClass.QuadTank]: [TankClass.OctoTank, TankClass.Auto5, TankClass.Fogmaker, TankClass.Harvester, TankClass.Alloy],
   [TankClass.TwinFlank]: [TankClass.OctoTank, TankClass.Battleship, TankClass.Trapezoid, TankClass.TripleTwin, TankClass.Bulwark, TankClass.DoubleTriple, TankClass.Warkwark],
   [TankClass.Assassin]: [TankClass.Ranger, TankClass.Stalker, TankClass.Executioner, TankClass.Railgun, TankClass.Locomotive],
-  [TankClass.Overseer]: [TankClass.Overlord, TankClass.Overtrapper, TankClass.Commander],
-  [TankClass.Cruiser]: [TankClass.Battleship, TankClass.Commander],
+  [TankClass.Overseer]: [TankClass.Overlord, TankClass.Overtrapper, TankClass.Commander, TankClass.AutoOverseer],
+  [TankClass.Cruiser]: [TankClass.Battleship, TankClass.Commander, TankClass.AutoCruiser, TankClass.Shipyard],
   [TankClass.Hunter]: [TankClass.Predator, TankClass.Streamliner, TankClass.Falconer, TankClass.Executioner, TankClass.Mortar],
   [TankClass.TriTrapper]: [TankClass.TriMegaTrapper, TankClass.PentaTrapper, TankClass.HexaTrapper, TankClass.Sentinel, TankClass.Alloy],
   [TankClass.MegaTrapper]: [TankClass.UltraTrapper, TankClass.TriMegaTrapper, TankClass.Loophole],
-  [TankClass.Destroyer]: [TankClass.Annihilator, TankClass.Hybrid, TankClass.UltraTrapper, TankClass.AutoDestroyer, TankClass.Gustav],
+  [TankClass.Destroyer]: [TankClass.Annihilator, TankClass.Hybrid, TankClass.UltraTrapper, TankClass.AutoDestroyer, TankClass.Gustav, TankClass.BigCheese],
   [TankClass.Composition]: [TankClass.Hybrid, TankClass.Overpounder, TankClass.AutoComposition],
   [TankClass.Gunner]: [TankClass.Streamliner, TankClass.AutoGunner, TankClass.GunnerTrapper, TankClass.Nailgun, TankClass. Ratfest],
   [TankClass.TriAngle]: [TankClass.Booster, TankClass.Fighter, TankClass.Trapezoid, TankClass.Surfer, TankClass.Fan],
   [TankClass.Auto3]: [TankClass.Auto5, TankClass.AutoGunner, TankClass.Mega3, TankClass.Auto4, TankClass.Sentinel, TankClass.Harvester],
   [TankClass.Wark]: [TankClass.Bulwark, TankClass.AutoWark, TankClass.Wamork, TankClass.Warkle, TankClass.Warkwark],
-  [TankClass.TrapGuard]: [TankClass.Bulwark, TankClass.Alloy, TankClass.GunnerTrapper],
+  [TankClass.TrapGuard]: [TankClass.Bulwark, TankClass.Alloy, TankClass.GunnerTrapper, TankClass.Ternary],
   [TankClass.MachineTrapper]: [TankClass.GatlingTrapper, TankClass.AutoMachineTrapper],
   [TankClass.GatlingGun]: [TankClass.Sprayer, TankClass.GatlingTrapper, TankClass.Bulletstream],
   [TankClass.Howitzer]: [TankClass.Gustav, TankClass.Locomotive, TankClass.AutoHowitzer, TankClass.Mortar]
@@ -792,9 +829,9 @@ export const FOV_MULT: Record<number, TankClass[]> = {
   ],
   1.25: [
     TankClass.Sniper, TankClass.Hunter, TankClass.Streamliner, TankClass.Overseer,
-    TankClass.Overlord, TankClass.Manager, TankClass.Commander, TankClass.Battleship,
-    TankClass.Cruiser, TankClass.Falconer, TankClass.Howitzer,
-    TankClass.Gustav, TankClass.AutoHowitzer, TankClass.Mortar
+    TankClass.Overlord, TankClass.AutoOverseer, TankClass.Manager, TankClass.Commander, TankClass.Battleship,
+    TankClass.Cruiser, TankClass.AutoCruiser, TankClass.Shipyard, TankClass.Falconer, TankClass.Howitzer,
+    TankClass.Gustav, TankClass.AutoHowitzer, TankClass.Mortar, TankClass.BigCheese
   ],
   1.4: [
     TankClass.Assassin, TankClass.Stalker, TankClass.Railgun, TankClass.Predator,
