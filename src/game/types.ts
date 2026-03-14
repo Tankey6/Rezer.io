@@ -108,8 +108,34 @@ export enum TankClass {
   AutoCruiser = 'Auto-Cruiser',
   Shipyard = 'Shipyard',
   BigCheese = 'Big Cheese',
-  Ternary = 'Ternary'
+  Ternary = 'Ternary',
+  Launcher = 'Launcher',
+  Rocketeer = 'Rocketeer',
+  Buster = 'Buster',
+  Deployer = 'Deployer',
+  Hurler = 'Hurler',
+  FieldGun = 'Field Gun',
+  Occupier = 'Occupier',
+  Cluster = 'Cluster',
+  Overdrive = 'Overdrive',
+  Payload = 'Payload',
+  Engineer = 'Engineer',
+  Mechanic = 'Mechanic',
+  Autoception = 'Autoception',
+  TwinLauncher = 'Twin Launcher'
 }
+
+export type MissileType = TankClass | 'None';
+export const MissileType = {
+  None: 'None' as MissileType,
+  Launcher: TankClass.Launcher as MissileType,
+  Rocketeer: TankClass.Rocketeer as MissileType,
+  Deployer: TankClass.Deployer as MissileType,
+  Hurler: TankClass.Hurler as MissileType,
+  FieldGun: TankClass.FieldGun as MissileType,
+  Occupier: TankClass.Occupier as MissileType,
+  Cluster: TankClass.Cluster as MissileType
+};
 
 export interface BarrelDef {
   angleOffset: number;
@@ -133,5 +159,8 @@ export interface BarrelDef {
   autoAim?: boolean;
   visualOnly?: boolean;
   drawBase?: boolean;
+  baseType?: 'circle' | 'triangle' | 'square';
   baseRadius?: number;
+  hasAutoTurret?: boolean;
+  missileType?: MissileType;
 }

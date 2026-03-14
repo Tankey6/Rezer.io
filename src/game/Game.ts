@@ -6,8 +6,8 @@ import { Drone } from './entities/Drone.ts';
 import { Shape } from './entities/Shape.ts';
 import { Crasher } from './entities/Crasher.ts';
 import { EnemyTank } from './entities/EnemyTank.ts';
-import { ShapeType, TankClass, EntityType } from './types.ts';
-import { TANK_CLASSES, getFovMult } from './tankClasses.ts';
+import { ShapeType, TankClass, EntityType, MissileType, BarrelDef } from './types.ts';
+import { TANK_CLASSES, getFovMult, getMissileBarrels, AUTO_TURRET_BARREL } from './tankClasses.ts';
 import { Entity } from './entities/Entity.ts';
 import { SpatialGrid } from './SpatialGrid.ts';
 import { BinaryReader, BinaryWriter } from './binary.ts';
@@ -67,8 +67,10 @@ export class Game {
   
   lastTime: number = 0;
   animationFrameId: number = 0;
+  running: boolean = false;
   
   camera: Vector = new Vector(0, 0);
+  cameraTargetId: number | null = null;
   
   ws: WebSocket | null = null;
   pendingSpawnName: string | null = null;
@@ -132,21 +134,23 @@ export class Game {
         const tankClass = reader.readString();
         const survivalTime = reader.readUint32();
         const killedBy = reader.readString();
-        console.log('Death info:', { level, tankClass, survivalTime, killedBy });
+        const killerId = reader.readUint32();
+        console.log('Death info:', { level, tankClass, survivalTime, killedBy, killerId });
         if (this.onGameOver) {
-          this.onGameOver({ level, tankClass, survivalTime, killedBy });
+          this.onGameOver({ level, tankClass, survivalTime, killedBy, killerId });
         }
       }
     };
   }
 
-  spawn(name: string) {
+  spawn(name: string, level: number) {
     this.isSpawning = true;
     this.spawnName = name;
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       const writer = new BinaryWriter();
       writer.writeUint8(4); // SPAWN
       writer.writeString(name);
+      writer.writeUint16(level);
       this.ws.send(writer.getBuffer());
     } else {
       this.pendingSpawnName = name;
@@ -221,7 +225,12 @@ export class Game {
         this.lastServerVel = new Vector(vx, vy);
         
         // Reconciliation
-        p.pos = this.lastServerPos.copy();
+        const dist = p.pos.dist(this.lastServerPos);
+        if (dist > 100) {
+          p.pos = this.lastServerPos.copy();
+        } else {
+          p.pos = p.pos.lerp(this.lastServerPos, 0.2);
+        }
         p.vel = this.lastServerVel.copy();
         
         this.pendingInputs = this.pendingInputs.filter(input => input.sequence > lastSequence);
@@ -229,7 +238,7 @@ export class Game {
           this.applyInput(p, input, input.dt);
         }
       } else {
-        p.stateBuffer.push({ pos: new Vector(x, y), timestamp });
+        p.stateBuffer.push({ pos: new Vector(x, y), angle, timestamp });
         if (p.stateBuffer.length > 20) p.stateBuffer.shift();
       }
 
@@ -270,6 +279,13 @@ export class Game {
       const flags = reader.readUint8();
       const isRailgun = (flags & 1) !== 0;
       const isDead = (flags & 2) !== 0;
+      const hasAutoTurret = (flags & 4) !== 0;
+      const missileType = reader.readString() as MissileType;
+      let autoAngle = 0;
+      if (hasAutoTurret) {
+        autoAngle = reader.readFloat32();
+      }
+      const angle = reader.readFloat32();
       
       currentBulletIds.add(id);
       let b = this.bulletMap.get(id);
@@ -280,7 +296,7 @@ export class Game {
       }
       
       if (!isDead) {
-        b.stateBuffer.push({ pos: new Vector(x, y), timestamp });
+        b.stateBuffer.push({ pos: new Vector(x, y), angle, timestamp });
         if (b.stateBuffer.length > 20) b.stateBuffer.shift();
       }
       
@@ -290,6 +306,10 @@ export class Game {
       b.color = color;
       b.isRailgun = isRailgun;
       b.dead = isDead;
+      b.hasAutoTurret = hasAutoTurret;
+      b.missileType = missileType;
+      b.autoAngle = autoAngle;
+      b.angle = angle;
     }
     for (const id of this.bulletMap.keys()) {
       if (!currentBulletIds.has(id)) this.bulletMap.delete(id);
@@ -317,6 +337,9 @@ export class Game {
         s.id = id;
         this.shapeMap.set(id, s);
       }
+      s.stateBuffer.push({ pos: new Vector(x, y), angle, timestamp });
+      if (s.stateBuffer.length > 20) s.stateBuffer.shift();
+      
       s.pos.x = x;
       s.pos.y = y;
       s.radius = radius;
@@ -326,6 +349,9 @@ export class Game {
       s.maxHealth = maxHealth;
     }
     for (const id of this.shapeMap.keys()) {
+      const s = this.shapeMap.get(id);
+      // Don't delete rocks just because they are culled by server
+      if (s && s.shapeType === ShapeType.ROCK) continue;
       if (!currentShapeIds.has(id)) this.shapeMap.delete(id);
     }
     this.shapes = Array.from(this.shapeMap.values());
@@ -360,7 +386,7 @@ export class Game {
       }
       e.name = name;
       
-      e.stateBuffer.push({ pos: new Vector(x, y), timestamp });
+      e.stateBuffer.push({ pos: new Vector(x, y), angle, timestamp });
       if (e.stateBuffer.length > 20) e.stateBuffer.shift();
       
       e.angle = angle;
@@ -385,6 +411,13 @@ export class Game {
       const angle = reader.readFloat32();
       const radius = reader.readFloat32();
       const color = reader.readString();
+      const flags = reader.readUint8();
+      const hasAutoTurret = (flags & 1) !== 0;
+      const missileType = reader.readString() as MissileType;
+      let autoAngle = 0;
+      if (hasAutoTurret) {
+        autoAngle = reader.readFloat32();
+      }
       
       currentTrapIds.add(id);
       let t = this.trapMap.get(id);
@@ -393,11 +426,17 @@ export class Game {
         t.id = id;
         this.trapMap.set(id, t);
       }
+      t.stateBuffer.push({ pos: new Vector(x, y), angle, timestamp });
+      if (t.stateBuffer.length > 20) t.stateBuffer.shift();
+      
       t.pos.x = x;
       t.pos.y = y;
       t.angle = angle;
       t.radius = radius;
       t.color = color;
+      t.hasAutoTurret = hasAutoTurret;
+      t.missileType = missileType;
+      t.autoAngle = autoAngle;
     }
     for (const id of this.trapMap.keys()) {
       if (!currentTrapIds.has(id)) this.trapMap.delete(id);
@@ -414,6 +453,13 @@ export class Game {
       const angle = reader.readFloat32();
       const radius = reader.readFloat32();
       const color = reader.readString();
+      const flags = reader.readUint8();
+      const hasAutoTurret = (flags & 1) !== 0;
+      const missileType = reader.readString() as MissileType;
+      let autoAngle = 0;
+      if (hasAutoTurret) {
+        autoAngle = reader.readFloat32();
+      }
       
       currentDroneIds.add(id);
       let d = this.droneMap.get(id);
@@ -422,11 +468,17 @@ export class Game {
         d.id = id;
         this.droneMap.set(id, d);
       }
+      d.stateBuffer.push({ pos: new Vector(x, y), angle, timestamp });
+      if (d.stateBuffer.length > 20) d.stateBuffer.shift();
+      
       d.pos.x = x;
       d.pos.y = y;
       d.angle = angle;
       d.radius = radius;
       d.color = color;
+      d.hasAutoTurret = hasAutoTurret;
+      d.missileType = missileType;
+      d.autoAngle = autoAngle;
     }
     for (const id of this.droneMap.keys()) {
       if (!currentDroneIds.has(id)) this.droneMap.delete(id);
@@ -453,6 +505,9 @@ export class Game {
         c.id = id;
         this.crasherMap.set(id, c);
       }
+      c.stateBuffer.push({ pos: new Vector(x, y), angle, timestamp });
+      if (c.stateBuffer.length > 20) c.stateBuffer.shift();
+      
       c.pos.x = x;
       c.pos.y = y;
       c.angle = angle;
@@ -581,9 +636,11 @@ export class Game {
   }
 
   initRocks() {
-    for (let i = 0; i < 15; i++) this.spawnRock('outskirts');
-    for (let i = 0; i < 10; i++) this.spawnRock('nest');
-    for (let i = 0; i < 5; i++) this.spawnRock('random');
+    for (let i = 0; i < 15; i++) this.spawnRock('outskirts', i, 15);
+    for (let i = 0; i < 30; i++) this.spawnRock('nest_pentagon', i, 30);
+    for (let i = 0; i < 20; i++) this.spawnRock('nest_hexagon', i, 20);
+    for (let i = 0; i < 10; i++) this.spawnRock('nest_heptagon', i, 10);
+    for (let i = 0; i < 5; i++) this.spawnRock('random', i, 5);
   }
 
   isInsideRock(pos: Vector): boolean {
@@ -595,13 +652,19 @@ export class Game {
     return false;
   }
 
-  spawnRock(zone: 'outskirts' | 'nest' | 'random') {
+  spawnRock(zone: 'outskirts' | 'nest_pentagon' | 'nest_hexagon' | 'nest_heptagon' | 'random', index?: number, total?: number) {
     const nestCenter = new Vector(this.worldSize.width / 2, this.worldSize.height / 2);
     let pos: Vector;
     
-    if (zone === 'nest') {
-      const angle = Math.random() * Math.PI * 2;
-      const r = Math.random() * 1200;
+    if (zone.startsWith('nest_')) {
+      const angle = (index !== undefined && total !== undefined) 
+        ? (index / total) * Math.PI * 2 + (Math.random() * 0.2 - 0.1)
+        : Math.random() * Math.PI * 2;
+        
+      let r = 0;
+      if (zone === 'nest_pentagon') r = 2250 + (Math.random() * 60 - 30);
+      else if (zone === 'nest_hexagon') r = 1200 + (Math.random() * 60 - 30);
+      else if (zone === 'nest_heptagon') r = 500 + (Math.random() * 60 - 30);
       pos = new Vector(nestCenter.x + Math.cos(angle) * r, nestCenter.y + Math.sin(angle) * r);
     } else if (zone === 'outskirts') {
       const side = Math.floor(Math.random() * 4);
@@ -627,7 +690,9 @@ export class Game {
     if (!this.isServer) return;
     
     const nestCenter = new Vector(this.worldSize.width / 2, this.worldSize.height / 2);
-    let nestCount = 0;
+    let pentagonCount = 0;
+    let hexagonCount = 0;
+    let heptagonCount = 0;
     let outskirtsCount = 0;
     let randomCount = 0;
 
@@ -636,13 +701,17 @@ export class Game {
         const d = s.pos.dist(nestCenter);
         const isOutskirts = s.pos.x < 1000 || s.pos.x > this.worldSize.width - 1000 || s.pos.y < 1000 || s.pos.y > this.worldSize.height - 1000;
         
-        if (d < 1500) nestCount++;
+        if (Math.abs(d - 2250) < 150) pentagonCount++;
+        else if (Math.abs(d - 1200) < 150) hexagonCount++;
+        else if (Math.abs(d - 500) < 150) heptagonCount++;
         else if (isOutskirts) outskirtsCount++;
         else randomCount++;
       }
     }
 
-    if (nestCount < 10) this.spawnRock('nest');
+    if (pentagonCount < 30) this.spawnRock('nest_pentagon');
+    if (hexagonCount < 20) this.spawnRock('nest_hexagon');
+    if (heptagonCount < 10) this.spawnRock('nest_heptagon');
     if (outskirtsCount < 15) this.spawnRock('outskirts');
     if (randomCount < 5) this.spawnRock('random');
   }
@@ -694,14 +763,34 @@ export class Game {
       const r = Math.random() * nestRadius;
       pos = new Vector(nestCenter.x + Math.cos(angle) * r, nestCenter.y + Math.sin(angle) * r);
       
-      if (Math.random() < 0.05) {
-        type = ShapeType.PENTAGON;
-        isAlpha = true;
-      } else {
-        if (Math.random() < 0.125) {
-          type = ShapeType.HEXAGON
+      if (r < 500) {
+        // Heptagon Nest
+        if (Math.random() < 0.05) {
+            type = ShapeType.HEPTAGON;
+            isAlpha = true;
         } else {
-          type = ShapeType.PENTAGON
+            const rand = Math.random();
+            if (rand < 0.5) type = ShapeType.PENTAGON;
+            else if (rand < 0.75) type = ShapeType.HEXAGON;
+            else type = ShapeType.HEPTAGON;
+        }
+      } else if (r < 1200) {
+        // Hexagon Nest
+        if (Math.random() < 0.05) {
+            type = ShapeType.HEXAGON;
+            isAlpha = true;
+        } else {
+            const rand = Math.random();
+            if (rand < 0.5) type = ShapeType.PENTAGON;
+            else type = ShapeType.HEXAGON;
+        }
+      } else {
+        // Pentagon Nest
+        if (Math.random() < 0.05) {
+            type = ShapeType.PENTAGON;
+            isAlpha = true;
+        } else {
+            type = ShapeType.PENTAGON;
         }
       }
     } else {
@@ -858,11 +947,14 @@ export class Game {
   cleanup: () => void = () => {};
 
   start() {
+    if (this.running) return;
+    this.running = true;
     this.lastTime = performance.now();
     this.loop(this.lastTime);
   }
 
   stop() {
+    this.running = false;
     cancelAnimationFrame(this.animationFrameId);
     if (this.ws) {
       this.ws.close();
@@ -923,7 +1015,127 @@ export class Game {
     
     this.draw();
     
-    this.animationFrameId = requestAnimationFrame((t) => this.loop(t));
+    if (this.running) {
+      this.animationFrameId = requestAnimationFrame((t) => this.loop(t));
+    }
+  }
+
+  private tickEntityWeapons(entity: Bullet | Trap | Drone, dt: number) {
+    if (!this.isServer || entity.dead) return;
+
+    let barrels: BarrelDef[] = [];
+    if (entity.missileType !== MissileType.None) {
+      barrels = barrels.concat(getMissileBarrels(entity.missileType));
+    }
+    if (entity.hasAutoTurret) {
+      barrels.push(AUTO_TURRET_BARREL);
+    }
+
+    if (barrels.length === 0) return;
+
+    // Initialize reload timers if needed
+    if (entity.reloadTimers.length !== barrels.length) {
+      entity.reloadTimers = new Array(barrels.length).fill(0);
+    }
+
+    // Find target for auto aim
+    let target: Entity | null = null;
+    let minDistSq = Infinity;
+    const isAutoAim = barrels.some(b => b.autoAim);
+    
+    if (isAutoAim) {
+      const targets: Entity[] = [];
+      for (const p of this.players.values()) {
+        if (p.id !== entity.ownerId) targets.push(p);
+      }
+      for (const e of this.enemies) {
+        if (e.id !== entity.ownerId) targets.push(e);
+      }
+      for (const s of this.shapes) targets.push(s);
+      
+      for (const t of targets) {
+        const distSq = entity.pos.distSq(t.pos);
+        if (distSq < 600 * 600 && distSq < minDistSq) {
+          minDistSq = distSq;
+          target = t;
+        }
+      }
+    }
+
+    if (target) {
+      const targetAngle = Math.atan2(target.pos.y - entity.pos.y, target.pos.x - entity.pos.x);
+      // Smoothly rotate autoAngle towards targetAngle
+      let diff = targetAngle - entity.autoAngle;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      entity.autoAngle += diff * Math.min(1, dt * 10);
+    } else {
+      entity.autoAngle += dt * 2; // Spin when no target
+    }
+
+    const owner = this.players.get(entity.ownerId) || this.enemies.find(e => e.id === entity.ownerId);
+    if (!owner) return;
+
+    const baseReloadTime = 1.0; // Base reload time for entity weapons
+    const bulletSpeed = 400;
+
+    for (let i = 0; i < barrels.length; i++) {
+      const barrel = barrels[i];
+      const reloadTime = baseReloadTime * barrel.reloadMult;
+      
+      entity.reloadTimers[i] += dt;
+      
+      let canShoot = false;
+      if (barrel.autoAim) {
+        canShoot = target !== null && entity.reloadTimers[i] >= reloadTime;
+      } else {
+        canShoot = entity.reloadTimers[i] >= reloadTime;
+      }
+
+      if (canShoot) {
+        entity.reloadTimers[i] -= reloadTime;
+        
+        const baseAngle = barrel.autoAim ? entity.autoAngle : entity.angle;
+        const barrelAngle = baseAngle + barrel.angleOffset;
+        const dir = new Vector(Math.cos(barrelAngle), Math.sin(barrelAngle));
+        
+        const bForward = new Vector(Math.cos(barrelAngle), Math.sin(barrelAngle));
+        const bRight = new Vector(-bForward.y, bForward.x);
+        let spawnPos = entity.pos.add(bForward.mult(barrel.length)).add(bRight.mult(barrel.yOffset));
+        
+        const angle = barrelAngle + (Math.random() - 0.5) * barrel.spread;
+        const vel = new Vector(Math.cos(angle), Math.sin(angle)).mult(bulletSpeed * barrel.speedMult);
+        
+        const bulletDamage = entity.damage * barrel.damageMult;
+        const bulletPenetration = entity.penetration * barrel.penMult;
+        const bulletRadius = 8 * (barrel.bulletSizeMult || 1);
+
+        if (barrel.type === 'trap') {
+          const t = new Trap(spawnPos, vel, entity.ownerId, entity.color, bulletDamage, bulletPenetration, bulletRadius * 1.5);
+          t.hasAutoTurret = barrel.hasAutoTurret || false;
+          t.missileType = barrel.missileType || MissileType.None;
+          this.traps.push(t);
+        } else if (barrel.type === 'drone' || barrel.type === 'cruiser_drone') {
+          const isCruiser = barrel.type === 'cruiser_drone';
+          const dSpeed = isCruiser ? bulletSpeed * 0.66 : bulletSpeed * 0.33;
+          const dRadius = isCruiser ? bulletRadius * 1.2 : bulletRadius * 1.8;
+          const dPenetration = isCruiser ? 1 : bulletPenetration;
+          const dDamage = isCruiser ? bulletDamage * 0.25 : bulletDamage;
+          const d = new Drone(spawnPos, vel, entity.ownerId, entity.color, dDamage, dPenetration, dRadius, dSpeed, isCruiser);
+          d.hasAutoTurret = barrel.hasAutoTurret || false;
+          d.missileType = barrel.missileType || MissileType.None;
+          this.drones.push(d);
+        } else {
+          const b = new Bullet(spawnPos, vel, entity.ownerId, bulletDamage, bulletPenetration, bulletRadius, entity.color, false);
+          b.hasAutoTurret = barrel.hasAutoTurret || false;
+          b.missileType = barrel.missileType || MissileType.None;
+          this.bullets.push(b);
+        }
+        
+        const recoil = barrel.recoilMult !== undefined ? barrel.recoilMult : barrel.damageMult;
+        entity.vel = entity.vel.sub(dir.mult(10 * recoil));
+      }
+    }
   }
 
   update(dt: number) {
@@ -1158,7 +1370,10 @@ export class Game {
             const vel = dir.mult(bulletSpeed);
             
             if (barrel.type === 'trap') {
-               this.traps.push(new Trap(spawnPos, vel, player.id, player.color, bulletDamage, bulletPenetration, bulletRadius * 1.5));
+               const t = new Trap(spawnPos, vel, player.id, player.color, bulletDamage, bulletPenetration, bulletRadius * 1.5);
+               t.hasAutoTurret = barrel.hasAutoTurret || false;
+               t.missileType = barrel.missileType || MissileType.None;
+               this.traps.push(t);
             } else if (barrel.type === 'drone' || barrel.type === 'cruiser_drone') {
                const isCruiser = barrel.type === 'cruiser_drone';
                const currentCount = isCruiser ? playerCruiserDroneCount : playerDroneCount;
@@ -1167,12 +1382,18 @@ export class Game {
                   const dRadius = isCruiser ? bulletRadius * 1.2 : bulletRadius * 1.8;
                   const dPenetration = isCruiser ? 1 : bulletPenetration;
                   const dDamage = isCruiser ? bulletDamage * 0.25 : bulletDamage;
-                  this.drones.push(new Drone(spawnPos, vel, player.id, player.color, dDamage, dPenetration, dRadius, dSpeed, isCruiser));
+                  const d = new Drone(spawnPos, vel, player.id, player.color, dDamage, dPenetration, dRadius, dSpeed, isCruiser);
+                  d.hasAutoTurret = barrel.hasAutoTurret || false;
+                  d.missileType = barrel.missileType || MissileType.None;
+                  this.drones.push(d);
                   if (isCruiser) playerCruiserDroneCount++;
                   else playerDroneCount++;
                }
             } else {
-               this.bullets.push(new Bullet(spawnPos, vel, player.id, bulletDamage, bulletPenetration, bulletRadius, player.color, player.tankClass === TankClass.Railgun));
+               const b = new Bullet(spawnPos, vel, player.id, bulletDamage, bulletPenetration, bulletRadius, player.color, player.tankClass === TankClass.Railgun);
+               b.hasAutoTurret = barrel.hasAutoTurret || false;
+               b.missileType = barrel.missileType || MissileType.None;
+               this.bullets.push(b);
             }
             
             const recoil = barrel.recoilMult !== undefined ? barrel.recoilMult : barrel.damageMult;
@@ -1206,6 +1427,7 @@ export class Game {
     for (let i = this.bullets.length - 1; i >= 0; i--) {
       const b = this.bullets[i];
       b.update(dt);
+      this.tickEntityWeapons(b, dt);
       const margin = 500;
       const isOutOfBounds = b.pos.x < -margin || b.pos.x > this.worldSize.width + margin || b.pos.y < -margin || b.pos.y > this.worldSize.height + margin;
       
@@ -1232,6 +1454,7 @@ export class Game {
     for (let i = this.traps.length - 1; i >= 0; i--) {
       const t = this.traps[i];
       t.update(dt);
+      this.tickEntityWeapons(t, dt);
       this.applySoftBorder(t, dt);
       const margin = 1000;
       if (t.dead || t.pos.x < -margin || t.pos.x > this.worldSize.width + margin || t.pos.y < -margin || t.pos.y > this.worldSize.height + margin) {
@@ -1265,6 +1488,7 @@ export class Game {
       }
       
       d.update(dt);
+      this.tickEntityWeapons(d, dt);
       this.applySoftBorder(d, dt);
       const margin = 1000;
       if (d.dead || d.pos.x < -margin || d.pos.x > this.worldSize.width + margin || d.pos.y < -margin || d.pos.y > this.worldSize.height + margin) {
@@ -1335,13 +1559,22 @@ export class Game {
       e.tick(dt, this.enemyTargets, (type, pos, vel, stats, barrel) => {
         const bulletRadius = 8 * (barrel.bulletSizeMult || 1);
         if (type === 'trap') {
-          this.traps.push(new Trap(pos, vel, e.id, e.color, stats.bulletDamage, stats.bulletPen, bulletRadius * 1.5));
+          const t = new Trap(pos, vel, e.id, e.color, stats.bulletDamage, stats.bulletPen, bulletRadius * 1.5);
+          t.hasAutoTurret = barrel.hasAutoTurret || false;
+          t.missileType = barrel.missileType || MissileType.None;
+          this.traps.push(t);
         } else if (type === 'drone' || type === 'cruiser_drone') {
           const isCruiser = type === 'cruiser_drone';
           const dRadius = isCruiser ? bulletRadius * 1.2 : bulletRadius * 1.8;
-          this.drones.push(new Drone(pos, vel, e.id, e.color, stats.bulletDamage, stats.bulletPen, dRadius, stats.bulletSpeed * (isCruiser ? 0.66 : 0.33), isCruiser));
+          const d = new Drone(pos, vel, e.id, e.color, stats.bulletDamage, stats.bulletPen, dRadius, stats.bulletSpeed * (isCruiser ? 0.66 : 0.33), isCruiser);
+          d.hasAutoTurret = barrel.hasAutoTurret || false;
+          d.missileType = barrel.missileType || MissileType.None;
+          this.drones.push(d);
         } else {
-          this.bullets.push(new Bullet(pos, vel, e.id, stats.bulletDamage, stats.bulletPen, bulletRadius, e.color, e.tankClass === TankClass.Railgun));
+          const b = new Bullet(pos, vel, e.id, stats.bulletDamage, stats.bulletPen, bulletRadius, e.color, e.tankClass === TankClass.Railgun);
+          b.hasAutoTurret = barrel.hasAutoTurret || false;
+          b.missileType = barrel.missileType || MissileType.None;
+          this.bullets.push(b);
         }
       }, droneCount, cruiserDroneCount);
 
@@ -1868,6 +2101,14 @@ export class Game {
     const fovMult = this.player ? getFovMult(this.player.tankClass) : 1;
     const baseScale = Math.min(this.canvas.width / 1920, this.canvas.height / 1080);
     
+    // Update camera to follow target if set
+    if (this.cameraTargetId !== null) {
+      const target = this.players.get(this.cameraTargetId) || this.enemyMap.get(this.cameraTargetId) || this.crasherMap.get(this.cameraTargetId);
+      if (target) {
+        this.camera = target.renderPos.copy();
+      }
+    }
+    
     // Adjust scale based on screen ratio for mobile
     let ratioScale = 1;
     const ratio = this.width / this.height;
@@ -1931,6 +2172,18 @@ export class Game {
     this.ctx.fillStyle = 'rgba(138, 143, 226, 0.2)'; // light blue-purple
     this.ctx.beginPath();
     this.ctx.arc(this.worldSize.width / 2, this.worldSize.height / 2, 2250, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    // Draw hexagon nest
+    this.ctx.fillStyle = 'rgba(37, 220, 252, 0.2)'; // cyan
+    this.ctx.beginPath();
+    this.ctx.arc(this.worldSize.width / 2, this.worldSize.height / 2, 1200, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    // Draw heptagon nest
+    this.ctx.fillStyle = 'rgba(252, 155, 37, 0.2)'; // orange
+    this.ctx.beginPath();
+    this.ctx.arc(this.worldSize.width / 2, this.worldSize.height / 2, 500, 0, Math.PI * 2);
     this.ctx.fill();
 
     for (const s of this.shapes) drawEntity(s);
@@ -1999,11 +2252,39 @@ export class Game {
     // Draw nest on minimap
     const nestX = x + (this.worldSize.width / 2 / this.worldSize.width) * size;
     const nestY = y + (this.worldSize.height / 2 / this.worldSize.height) * size;
-    const nestR = (2250 / this.worldSize.width) * size;
+    
+    // Pentagon nest
+    const nestRPentagon = (2250 / this.worldSize.width) * size;
     this.ctx.fillStyle = 'rgba(138, 143, 226, 0.5)';
     this.ctx.beginPath();
-    this.ctx.arc(nestX, nestY, nestR, 0, Math.PI * 2);
+    this.ctx.arc(nestX, nestY, nestRPentagon, 0, Math.PI * 2);
     this.ctx.fill();
+
+    // Hexagon nest
+    const nestRHexagon = (1200 / this.worldSize.width) * size;
+    this.ctx.fillStyle = 'rgba(37, 220, 252, 0.5)';
+    this.ctx.beginPath();
+    this.ctx.arc(nestX, nestY, nestRHexagon, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    // Heptagon nest
+    const nestRHeptagon = (500 / this.worldSize.width) * size;
+    this.ctx.fillStyle = 'rgba(252, 155, 37, 0.5)';
+    this.ctx.beginPath();
+    this.ctx.arc(nestX, nestY, nestRHeptagon, 0, Math.PI * 2);
+    this.ctx.fill();
+
+    // Draw rocks on minimap
+    this.ctx.fillStyle = '#888888';
+    for (const s of this.shapes) {
+      if (s.shapeType === ShapeType.ROCK) {
+        const rx = x + (s.pos.x / this.worldSize.width) * size;
+        const ry = y + (s.pos.y / this.worldSize.height) * size;
+        this.ctx.beginPath();
+        this.ctx.arc(rx, ry, 1.5, 0, Math.PI * 2);
+        this.ctx.fill();
+      }
+    }
 
     // Draw players
     for (const p of this.players.values()) {

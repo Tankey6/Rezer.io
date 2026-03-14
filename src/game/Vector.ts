@@ -19,7 +19,12 @@ export class Vector {
   }
   
   dist(v: Vector) { return this.sub(v).mag(); }
+  distSq(v: Vector) { const dx = this.x - v.x; const dy = this.y - v.y; return dx * dx + dy * dy; }
   dot(v: Vector) { return this.x * v.x + this.y * v.y; }
+  
+  lerp(v: Vector, t: number) {
+    return new Vector(this.x + (v.x - this.x) * t, this.y + (v.y - this.y) * t);
+  }
   
   limit(max: number) {
     const m = this.mag();

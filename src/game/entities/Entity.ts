@@ -7,8 +7,9 @@ export abstract class Entity {
   id: number = nextEntityId++;
   pos: Vector;
   renderPos: Vector;
+  angle: number = 0;
   vel: Vector = new Vector(0, 0);
-  stateBuffer: { pos: Vector, timestamp: number }[] = [];
+  stateBuffer: { pos: Vector, angle: number, timestamp: number }[] = [];
   radius: number;
   color: string;
   type: EntityType;
@@ -54,6 +55,12 @@ export abstract class Entity {
       s0.pos.x + (s1.pos.x - s0.pos.x) * t,
       s0.pos.y + (s1.pos.y - s0.pos.y) * t
     );
+    
+    // Interpolate angle
+    let angleDiff = s1.angle - s0.angle;
+    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+    this.angle = s0.angle + angleDiff * t;
   }
 
   update(dt: number) {

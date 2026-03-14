@@ -2,6 +2,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { Game } from '../game/Game.ts';
 import { BinaryReader, BinaryWriter } from '../game/binary.ts';
 import { Vector } from '../game/Vector.ts';
+import { ShapeType } from '../game/types.ts';
 import { Player } from '../game/entities/Player.ts';
 import { Bullet } from '../game/entities/Bullet.ts';
 import { Shape } from '../game/entities/Shape.ts';
@@ -34,12 +35,12 @@ export function setupMultiplayer(server: http.Server) {
         if (killerId !== null) {
           const killer = game.players.get(killerId);
           if (killer) {
-            killedBy = killer.tankClass;
+            killedBy = killer.name;
           } else {
             // Check enemies
             const enemy = game.enemies.find(e => e.id === killerId);
             if (enemy) {
-              killedBy = enemy.tankClass;
+              killedBy = enemy.name || enemy.tankClass;
             } else {
               // Check crashers
               const crasher = game.crashers.find(c => c.id === killerId);
@@ -56,6 +57,7 @@ export function setupMultiplayer(server: http.Server) {
         writer.writeString(player.tankClass);
         writer.writeUint32(survivalTime);
         writer.writeString(killedBy);
+        writer.writeUint32(killerId || 0);
         ws.send(writer.getBuffer());
         console.log('DEATH packet sent to player', playerId);
         
@@ -133,13 +135,15 @@ export function setupMultiplayer(server: http.Server) {
         }
       } else if (type === 4) { // SPAWN
         const name = reader.readString();
-        console.log(`Spawn request received for player ${playerId} with name: ${name}`);
+        const level = reader.readUint16();
+        console.log(`Spawn request received for player ${playerId} with name: ${name}, level: ${level}`);
         
         // If player already exists, we can either ignore or reset them.
         // Let's reset them to allow "re-spawning" if they get stuck or want to change name.
         const player = new Player(new Vector(Math.random() * game.worldSize.width, Math.random() * game.worldSize.height));
         player.id = playerId;
         player.name = name;
+        player.respawn(level);
         game.players.set(playerId, player);
         game.inputs.set(playerId, { keys: {}, mousePos: new Vector(0, 0), mouseDown: false, autoFire: false });
         console.log(`Player ${playerId} spawned/reset successfully`);
@@ -214,11 +218,22 @@ export function setupMultiplayer(server: http.Server) {
           if (e.id === playerId) selfIncluded = true;
         }
         else if (e instanceof Bullet) visibleBullets.push(e);
-        else if (e instanceof Shape) visibleShapes.push(e);
+        else if (e instanceof Shape) {
+          if (e.shapeType !== ShapeType.ROCK) {
+            visibleShapes.push(e);
+          }
+        }
         else if (e instanceof EnemyTank) visibleEnemies.push(e);
         else if (e instanceof Trap) visibleTraps.push(e);
         else if (e instanceof Drone) visibleDrones.push(e);
         else if (e instanceof Crasher) visibleCrashers.push(e);
+      }
+
+      // Always include all rocks for minimap visibility
+      for (const s of game.shapes) {
+        if (s.shapeType === ShapeType.ROCK) {
+          visibleShapes.push(s);
+        }
       }
 
       if (!selfIncluded) {
@@ -271,8 +286,13 @@ export function setupMultiplayer(server: http.Server) {
         writer.writeFloat32(b.pos.y);
         writer.writeFloat32(b.radius);
         writer.writeString(b.color);
-        const flags = (b.isRailgun ? 1 : 0) | (b.dead ? 2 : 0);
+        const flags = (b.isRailgun ? 1 : 0) | (b.dead ? 2 : 0) | (b.hasAutoTurret ? 4 : 0);
         writer.writeUint8(flags);
+        writer.writeString(b.missileType);
+        if (b.hasAutoTurret) {
+          writer.writeFloat32(b.autoAngle);
+        }
+        writer.writeFloat32(b.angle);
       }
       
       // Shapes
@@ -319,6 +339,12 @@ export function setupMultiplayer(server: http.Server) {
         writer.writeFloat32(t.angle);
         writer.writeFloat32(t.radius);
         writer.writeString(t.color);
+        const flags = (t.hasAutoTurret ? 1 : 0);
+        writer.writeUint8(flags);
+        writer.writeString(t.missileType);
+        if (t.hasAutoTurret) {
+          writer.writeFloat32(t.autoAngle);
+        }
       }
       
       // Drones
@@ -330,6 +356,12 @@ export function setupMultiplayer(server: http.Server) {
         writer.writeFloat32(d.angle);
         writer.writeFloat32(d.radius);
         writer.writeString(d.color);
+        const flags = (d.hasAutoTurret ? 1 : 0);
+        writer.writeUint8(flags);
+        writer.writeString(d.missileType);
+        if (d.hasAutoTurret) {
+          writer.writeFloat32(d.autoAngle);
+        }
       }
       
       // Crashers

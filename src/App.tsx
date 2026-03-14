@@ -60,6 +60,9 @@ export default function App() {
 
     game.onGameOver = (info) => {
       setDeathInfo(info);
+      if (gameRef.current) {
+        gameRef.current.cameraTargetId = info.killerId;
+      }
     };
 
     return () => {
@@ -73,11 +76,13 @@ export default function App() {
 
   const handleSpawn = () => {
     if (gameRef.current) {
-      gameRef.current.spawn(tankName || 'Unnamed Tank');
+      const level = deathInfo ? Math.max(1, Math.floor(deathInfo.level / 2)) : 1;
+      gameRef.current.spawn(tankName || 'Unnamed Tank', level);
       gameRef.current.start();
       setIsTitleScreen(false);
       setIsSpawning(true);
       setDeathInfo(null);
+      gameRef.current.cameraTargetId = null;
     }
   };
 

@@ -109,10 +109,20 @@ export function TankPreview({ tankClass, size = 64 }: TankPreviewProps) {
           ctx.strokeRect(0, -barrel.width / 2, barrel.length, barrel.width);
           ctx.restore();
           
-          if (barrel.drawBase !== false) {
+          if (barrel.drawBase) {
             ctx.beginPath();
-            ctx.arc(0, 0, barrel.baseRadius || (barrel.width * 0.75), 0, Math.PI * 2);
-            ctx.fillStyle = barrelColor;
+            if (barrel.baseType === 'triangle') {
+              ctx.moveTo(0, -barrel.width);
+              ctx.lineTo(barrel.length * 0.5, 0);
+              ctx.lineTo(0, barrel.width);
+              ctx.closePath();
+            } else if (barrel.baseType === 'square') {
+              ctx.rect(-barrel.width / 2, -barrel.width / 2, barrel.width, barrel.width);
+              ctx.fillStyle = '#999999'; // Grey square
+            } else {
+              ctx.arc(0, 0, barrel.baseRadius || (barrel.width * 0.75), 0, Math.PI * 2);
+              ctx.fillStyle = barrelColor;
+            }
             ctx.fill();
             ctx.stroke();
           }
@@ -125,10 +135,20 @@ export function TankPreview({ tankClass, size = 64 }: TankPreviewProps) {
           ctx.fillRect(0, -barrel.width / 2, barrel.length, barrel.width);
           ctx.strokeRect(0, -barrel.width / 2, barrel.length, barrel.width);
           
-          if (barrel.drawBase !== false) {
+          if (barrel.drawBase) {
             ctx.beginPath();
-            ctx.arc(0, 0, barrel.baseRadius || (barrel.width * 0.75), 0, Math.PI * 2);
-            ctx.fillStyle = barrelColor;
+            if (barrel.baseType === 'triangle') {
+              ctx.moveTo(0, -barrel.width);
+              ctx.lineTo(barrel.length * 0.5, 0);
+              ctx.lineTo(0, barrel.width);
+              ctx.closePath();
+            } else if (barrel.baseType === 'square') {
+              ctx.rect(-barrel.width / 2, -barrel.width / 2, barrel.width, barrel.width);
+              ctx.fillStyle = '#999999'; // Grey square
+            } else {
+              ctx.arc(0, 0, barrel.baseRadius || (barrel.width * 0.75), 0, Math.PI * 2);
+              ctx.fillStyle = barrelColor;
+            }
             ctx.fill();
             ctx.stroke();
           }

@@ -1,6 +1,6 @@
 import { Entity } from './Entity.ts';
 import { Vector } from '../Vector.ts';
-import { EntityType, TankClass } from '../types.ts';
+import { EntityType, TankClass, BarrelDef } from '../types.ts';
 import { darkenColor } from '../utils.ts';
 import { TANK_CLASSES, UPGRADE_PATHS } from '../tankClasses.ts';
 
@@ -119,7 +119,7 @@ export class Player extends Entity {
         TankClass.Destroyer, TankClass.MegaTrapper, TankClass.Composition,
         TankClass.TriAngle, TankClass.Auto3, TankClass.TriTrapper, TankClass.TrapGuard,
         TankClass.Overseer, TankClass.Cruiser, TankClass.Manager,
-        TankClass.Howitzer
+        TankClass.Howitzer, TankClass.Launcher
       ];
       if (tier1.includes(tank)) return 15;
       if (tier2.includes(tank)) return 30;
@@ -197,7 +197,7 @@ export class Player extends Entity {
 
     for (let i = 0; i < barrels.length; i++) {
       const barrel = barrels[i];
-      if (barrel.autoAim) continue;
+      if (barrel.autoAim || (barrel.visualOnly && barrel.baseType === 'square')) continue;
       
       ctx.save();
       
@@ -210,7 +210,7 @@ export class Player extends Entity {
         ctx.translate(barrel.xOffset, barrel.yOffset);
       }
       
-      if (barrel.widthEnd !== undefined) {
+      if (barrel.widthEnd !== undefined && barrel.length > 0) {
         ctx.beginPath();
         ctx.moveTo(0, -barrel.width / 2);
         ctx.lineTo(barrel.length, -barrel.widthEnd / 2);
@@ -219,9 +219,13 @@ export class Player extends Entity {
         ctx.closePath();
         ctx.fill();
         ctx.stroke();
-      } else {
+      } else if (barrel.length > 0) {
         ctx.fillRect(0, -barrel.width / 2, barrel.length, barrel.width);
         ctx.strokeRect(0, -barrel.width / 2, barrel.length, barrel.width);
+      }
+
+      if (barrel.drawBase) {
+        this.drawBarrelBase(ctx, barrel);
       }
       
       ctx.restore();
@@ -239,7 +243,7 @@ export class Player extends Entity {
     ctx.strokeStyle = '#727272'; // barrelOutline
     for (let i = 0; i < barrels.length; i++) {
       const barrel = barrels[i];
-      if (!barrel.autoAim) continue;
+      if (!barrel.autoAim && !(barrel.visualOnly && barrel.baseType === 'square')) continue;
       
       ctx.save();
       
@@ -247,40 +251,48 @@ export class Player extends Entity {
         ctx.rotate(barrel.posAngle);
         ctx.translate(barrel.posDist, 0);
         
+        // Draw turret base (before rotation if it's a square at 0,0)
+        if (barrel.drawBase && barrel.baseType === 'square' && (barrel.xOffset || 0) === 0 && (barrel.yOffset || 0) === 0) {
+          this.drawBarrelBase(ctx, barrel);
+        }
+
         ctx.save();
         ctx.rotate(this.barrelAngles[i] - (this.angle + barrel.posAngle));
         ctx.translate(barrel.xOffset || 0, barrel.yOffset || 0);
         
         // Draw barrel
         ctx.fillStyle = barrelColor;
-        ctx.fillRect(0, -barrel.width / 2, barrel.length, barrel.width);
-        ctx.strokeRect(0, -barrel.width / 2, barrel.length, barrel.width);
+        if (barrel.length > 0) {
+          ctx.fillRect(0, -barrel.width / 2, barrel.length, barrel.width);
+          ctx.strokeRect(0, -barrel.width / 2, barrel.length, barrel.width);
+        }
         ctx.restore();
         
-        // Draw turret base
-        if (barrel.drawBase !== false) {
-          ctx.beginPath();
-          ctx.arc(0, 0, barrel.baseRadius || (barrel.width * 0.75), 0, Math.PI * 2);
-          ctx.fillStyle = barrelColor;
-          ctx.fill();
-          ctx.stroke();
+        // Draw turret base (after rotation if it's not a square at 0,0)
+        if (barrel.drawBase && !(barrel.baseType === 'square' && (barrel.xOffset || 0) === 0 && (barrel.yOffset || 0) === 0)) {
+          this.drawBarrelBase(ctx, barrel);
         }
         
       } else {
+        // Draw turret base (before rotation if it's a square at 0,0)
+        if (barrel.drawBase && barrel.baseType === 'square' && (barrel.xOffset || 0) === 0 && (barrel.yOffset || 0) === 0) {
+          this.drawBarrelBase(ctx, barrel);
+        }
+
+        ctx.save();
         ctx.translate(barrel.xOffset, barrel.yOffset);
         ctx.rotate(this.barrelAngles[i] - this.angle);
         
         ctx.fillStyle = barrelColor;
-        ctx.fillRect(0, -barrel.width / 2, barrel.length, barrel.width);
-        ctx.strokeRect(0, -barrel.width / 2, barrel.length, barrel.width);
+        if (barrel.length > 0) {
+          ctx.fillRect(0, -barrel.width / 2, barrel.length, barrel.width);
+          ctx.strokeRect(0, -barrel.width / 2, barrel.length, barrel.width);
+        }
+        ctx.restore();
         
-        // Draw turret base
-        if (barrel.drawBase !== false) {
-          ctx.beginPath();
-          ctx.arc(0, 0, barrel.baseRadius || (barrel.width * 0.75), 0, Math.PI * 2);
-          ctx.fillStyle = barrelColor;
-          ctx.fill();
-          ctx.stroke();
+        // Draw turret base (after rotation if it's not a square at 0,0)
+        if (barrel.drawBase && !(barrel.baseType === 'square' && (barrel.xOffset || 0) === 0 && (barrel.yOffset || 0) === 0)) {
+          this.drawBarrelBase(ctx, barrel);
         }
       }
       
@@ -299,6 +311,27 @@ export class Player extends Entity {
       ctx.lineWidth = 1;
       ctx.strokeRect(this.renderPos.x - 20, this.renderPos.y + 30, 40, 6);
     }
+  }
+
+  drawBarrelBase(ctx: CanvasRenderingContext2D, barrel: BarrelDef) {
+    ctx.save();
+    ctx.beginPath();
+    if (barrel.baseType === 'triangle') {
+      ctx.moveTo(0, -barrel.width);
+      ctx.lineTo(barrel.length * 0.5, 0);
+      ctx.lineTo(0, barrel.width);
+      ctx.closePath();
+    } else if (barrel.baseType === 'square') {
+      ctx.rect(-barrel.width / 2, -barrel.width / 2, barrel.width, barrel.width);
+    } else {
+      ctx.arc(0, 0, barrel.baseRadius || (barrel.width * 0.75), 0, Math.PI * 2);
+    }
+    ctx.fillStyle = '#999999';
+    ctx.fill();
+    ctx.strokeStyle = '#727272';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.restore();
   }
 
   gainXp(amount: number) {
