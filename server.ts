@@ -20,7 +20,9 @@ async function startServer() {
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
   });
-
+  setInterval(() => {
+    fetch('/api/health').catch(() => {}); // Minimal impact "poke"
+}, 30000);
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },

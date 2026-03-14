@@ -16,6 +16,7 @@ export default function App() {
   const [showUpgradeTree, setShowUpgradeTree] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
 
+
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       setMousePos({ x: e.clientX, y: e.clientY });
@@ -372,4 +373,5 @@ export default function App() {
       )}
     </div>
   );
+  
 }
