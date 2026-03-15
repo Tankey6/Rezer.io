@@ -6,7 +6,7 @@ export const baseBarrel: BarrelDef = {
 };
 
 export const AUTO_BULLET_INDICATOR: BarrelDef = {
-  ...baseBarrel, length: 0, width: 25, visualOnly: true, drawBase: true, baseType: 'square', autoAim: true
+  ...baseBarrel, length: 0, width: 20, visualOnly: true, drawBase: true, baseType: 'square', autoAim: true
 };
 
 function clone(barrel: BarrelDef, overrides: Partial<BarrelDef> = {}): BarrelDef {
@@ -17,8 +17,8 @@ function clone(barrel: BarrelDef, overrides: Partial<BarrelDef> = {}): BarrelDef
 export function Twin(barrels: BarrelDef[], spread: number = 10): BarrelDef[] {
   const result: BarrelDef[] = [];
   for (const b of barrels) {
-    result.push(clone(b, { yOffset: b.yOffset - spread, damageMult: b.damageMult * 0.65 }));
-    result.push(clone(b, { yOffset: b.yOffset + spread, delay: b.delay + 0.5, damageMult: b.damageMult * 0.65 }));
+    result.push(clone(b, { yOffset: b.yOffset - spread, damageMult: b.damageMult * 0.85 }));
+    result.push(clone(b, { yOffset: b.yOffset + spread, delay: b.delay + 0.5, damageMult: b.damageMult * 0.85 }));
   }
   return result;
 }
@@ -55,7 +55,8 @@ export function Flank(barrels: BarrelDef[]): BarrelDef[] {
 
 export function Pounder(barrels: BarrelDef[]): BarrelDef[] {
   return barrels.map(b => clone(b, {
-    width: 25,
+    width: b.width + 5,
+   widthEnd: b.widthEnd !== undefined ? b.widthEnd + 5 : undefined,
     damageMult: b.damageMult * 1.5,
     speedMult: b.speedMult * 0.9,
     penMult: b.penMult * 1.5,
@@ -86,12 +87,35 @@ export function Launcher(barrels: BarrelDef[]): BarrelDef[] {
 export function Destroyer(barrels: BarrelDef[]): BarrelDef[] {
   return barrels.map(b => clone(b, {
     width: b.width + 7,
+    widthEnd: b.widthEnd !== undefined ? b.widthEnd + 7 : undefined,
     damageMult: b.damageMult * 3,
     speedMult: b.speedMult * 0.8,
     penMult: b.penMult * 3,
     reloadMult: b.reloadMult * 2.5,
     bulletSizeMult: 1*(32/20)
   }));
+}
+
+export function Excavator(barrels: BarrelDef[]): BarrelDef[] {
+  const result = barrels.map(b => clone(b, {
+    length: b.length + 10
+  }));
+  
+  result.push(clone(barrels[0], {
+    length: 15,
+    width: 20,
+    widthEnd: 0,
+    yOffset: 20,
+    visualOnly: true
+  }));
+  result.push(clone(barrels[0], {
+    length: 15,
+    width: 20,
+    widthEnd: 0,
+    yOffset: -20,
+    visualOnly: true
+  }));
+  return result;
 }
 
 export function Annihilator(barrels: BarrelDef[]): BarrelDef[] {
@@ -148,6 +172,15 @@ export function Octo(barrels: BarrelDef[]): BarrelDef[] {
   }
   return result;
 }
+export function Sprinkler(barrels: BarrelDef[]): BarrelDef[] {
+  const result: BarrelDef[] = [];
+  for (const b of barrels) {
+    for (let i = 0; i < 12; i++) {
+      result.push(clone(b, { length: 28, width: 12, bulletSizeMult: 12/20, angleOffset: b.angleOffset + (Math.PI / 6) * i, delay: b.delay + (i % 2 === 0 ? 0 : 0.5), damageMult: 0.75 }));
+    }
+  }
+  return result;
+}
 export function Gunner(barrels: BarrelDef[]): BarrelDef[] {
   const result: BarrelDef[] = [];
   for (const b of barrels) {
@@ -176,6 +209,29 @@ export function Overseer(barrels: BarrelDef[]): BarrelDef[] {
   ];
 }
 
+export function Underseer(barrels: BarrelDef[]): BarrelDef[] {
+  return [
+    clone(baseBarrel, { angleOffset: Math.PI / 2, length: 30, width: 20, widthEnd: 25, type: 'drone', maxDrones: 8, reloadMult: 2, damageMult: 0.5, penMult: 0.5, missileType: MissileType.UnderseerDrone }),
+    clone(baseBarrel, { angleOffset: -Math.PI / 2, length: 30, width: 20, widthEnd: 25, type: 'drone', maxDrones: 8, reloadMult: 2, damageMult: 0.5, penMult: 0.5, missileType: MissileType.UnderseerDrone })
+  ];
+}
+
+export function Pythonist(barrels: BarrelDef[]): BarrelDef[] {
+  return [
+    clone(baseBarrel, { angleOffset: Math.PI / 2, length: 35, width: 25, widthEnd: 30, type: 'drone', maxDrones: 12, reloadMult: 1.5, damageMult: 0.8, penMult: 0.8, missileType: MissileType.UnderseerDrone }),
+    clone(baseBarrel, { angleOffset: -Math.PI / 2, length: 35, width: 25, widthEnd: 30, type: 'drone', maxDrones: 12, reloadMult: 1.5, damageMult: 0.8, penMult: 0.8, missileType: MissileType.UnderseerDrone })
+  ];
+}
+
+export function Necromancer(barrels: BarrelDef[]): BarrelDef[] {
+  return [
+    clone(baseBarrel, { angleOffset: 0, length: 30, width: 20, widthEnd: 25, type: 'drone', maxDrones: 12, reloadMult: 2, damageMult: 0.5, penMult: 0.5 }),
+    clone(baseBarrel, { angleOffset: Math.PI / 2, length: 30, width: 20, widthEnd: 25, type: 'drone', maxDrones: 12, reloadMult: 2, damageMult: 0.5, penMult: 0.5 }),
+    clone(baseBarrel, { angleOffset: Math.PI, length: 30, width: 20, widthEnd: 25, type: 'drone', maxDrones: 12, reloadMult: 2, damageMult: 0.5, penMult: 0.5 }),
+    clone(baseBarrel, { angleOffset: -Math.PI / 2, length: 30, width: 20, widthEnd: 25, type: 'drone', maxDrones: 12, reloadMult: 2, damageMult: 0.5, penMult: 0.5 })
+  ];
+}
+
 export function Director(barrels: BarrelDef[]): BarrelDef[] {
   return barrels.map(b => clone(b, {
     length: b.length-5,
@@ -189,6 +245,40 @@ export function Director(barrels: BarrelDef[]): BarrelDef[] {
   }));
 }
 
+export function Spawner(barrels: BarrelDef[]): BarrelDef[] {
+  return [
+    clone(baseBarrel, { length: 25, width: 20, visualOnly: true}),
+    clone(baseBarrel, { xOffset: 25, length: 5, width: 15, visualOnly: true}),
+    clone(baseBarrel, { length: 5, width: 20, xOffset: 30, type: 'drone', maxDrones: 8, reloadMult: 1.5, damageMult: 1.5, penMult: 1.5 }),
+  ];
+}
+
+export function Carrier(barrels: BarrelDef[]): BarrelDef[] {
+  return [
+    clone(baseBarrel, { angleOffset: Math.PI / 4, length: 25, width: 20, visualOnly: true}),
+    clone(baseBarrel, { angleOffset: Math.PI / 4, xOffset: 25, length: 5, width: 15, visualOnly: true}),
+    clone(baseBarrel, { angleOffset: Math.PI / 4, length: 5, width: 20, xOffset: 30, type: 'drone', maxDrones: 8, reloadMult: 1.5, damageMult: 1.5, penMult: 1.5 }),
+    clone(baseBarrel, { angleOffset: -Math.PI / 4, length: 25, width: 20, visualOnly: true}),
+    clone(baseBarrel, { angleOffset: -Math.PI / 4, xOffset: 25, length: 5, width: 15, visualOnly: true}),
+    clone(baseBarrel, { angleOffset: -Math.PI / 4, length: 5, width: 20, xOffset: 30, type: 'drone', maxDrones: 8, reloadMult: 1.5, damageMult: 1.5, penMult: 1.5 }),
+  ];
+}
+
+export function Factory(barrels: BarrelDef[]): BarrelDef[] {
+  return [
+    clone(baseBarrel, { length: 25, width: 25, visualOnly: true}),
+    clone(baseBarrel, { xOffset: 25, length: 5, width: 20, visualOnly: true}),
+    clone(baseBarrel, { length: 5, width: 25, xOffset: 30, type: 'drone', maxDrones: 6, reloadMult: 2, damageMult: 2, penMult: 2, bulletSizeMult: 1.2 }),
+  ];
+}
+
+export function Overmind(barrels: BarrelDef[]): BarrelDef[] {
+  return [
+    clone(baseBarrel, { length: 25, width: 20, visualOnly: true}),
+    clone(baseBarrel, { xOffset: 25, length: 5, width: 15, visualOnly: true}),
+    clone(baseBarrel, { length: 5, width: 20, xOffset: 30, type: 'drone', maxDrones: 8, reloadMult: 1.5, damageMult: 1.5, penMult: 1.5, hasAutoTurret: true }),
+  ];
+}
 
 export function BigCheese(barrels: BarrelDef[]): BarrelDef[] {
   return barrels.map(b => clone(b, {
@@ -219,7 +309,6 @@ export function Trapper(barrels: BarrelDef[]): BarrelDef[] {
     clone(baseBarrel, { length: 15, width: 15, widthEnd: 35, xOffset: 25, type: 'trap', reloadMult: 1.5, damageMult: 2, penMult: 2 })
   ];
 }
-
 export function TriTrapper(barrels: BarrelDef[]): BarrelDef[] {
   return [
     clone(baseBarrel, { angleOffset: 0, length: 25, width: 15, visualOnly: true }),
@@ -550,6 +639,7 @@ export const TANK_CLASSES: Record<TankClass, BarrelDef[]> = {
   ],
   [TankClass.Pounder]: Pounder([baseBarrel]),
   [TankClass.Destroyer]: Destroyer(Pounder([baseBarrel])),
+  [TankClass.Excavator]: Excavator(Destroyer(Pounder([baseBarrel]))),
   [TankClass.Gunner]: Gunner([baseBarrel]),
   [TankClass.TriAngle]: [
     // Back left/right (drawn under)
@@ -559,6 +649,8 @@ export const TANK_CLASSES: Record<TankClass, BarrelDef[]> = {
     baseBarrel
   ],
   [TankClass.Overseer]: Overseer([baseBarrel]),
+  [TankClass.Underseer]: Underseer([baseBarrel]),
+  [TankClass.Pythonist]: Pythonist([baseBarrel]),
   [TankClass.Trapper]: Trapper([baseBarrel]),
   [TankClass.Hunter]: Hunter([baseBarrel]),
   
@@ -651,6 +743,11 @@ export const TANK_CLASSES: Record<TankClass, BarrelDef[]> = {
   [TankClass.Streamliner]: Streamliner([baseBarrel]),
   [TankClass.Sprayer]: Sprayer([baseBarrel]),
   [TankClass.GatlingGun]: GatlingGun([baseBarrel]),
+  [TankClass.Hotchkiss]: [
+  clone(baseBarrel, { length: 30, angleOffset: Math.PI/8, width: 10, yOffset: 2.5, delay: 0.5, damageMult: 0.5, speedMult: 1, penMult: 0.5 }),
+  clone(baseBarrel, { length: 30, angleOffset: -Math.PI/8, width: 10, yOffset: -2.5, delay: 0.5, damageMult: 0.5, speedMult: 1, penMult: 0.5 }), 
+  ...GatlingGun([baseBarrel])
+  ],
   [TankClass.GatlingTrapper]: GatlingTrapper([baseBarrel]),
   [TankClass.Bulletstream]: Bulletstream([baseBarrel]),
   [TankClass.AutoMachineTrapper]: AutoMachineTrapper([baseBarrel]),
@@ -755,6 +852,20 @@ export const TANK_CLASSES: Record<TankClass, BarrelDef[]> = {
     clone(baseBarrel, { angleOffset: Math.PI, length: 15, width: 15, widthEnd: 35, xOffset: 25, type: 'trap', reloadMult: 1.5, damageMult: 2, penMult: 2 })
   ],
   [TankClass.MachineTrapper]: MachineTrapper([baseBarrel]),
+  [TankClass.AutoUnderseer]: [
+    ...Underseer([baseBarrel]),
+    clone(baseBarrel, { angleOffset: 0, length: 20, width: 12, posDist: 0, posAngle: 0, autoAim: true, drawBase: true }),
+  ],
+  [TankClass.Necromancer]: Necromancer([baseBarrel]),
+  [TankClass.GreyGoo]: [
+    ...Underseer([baseBarrel]),
+    ...Spawner([baseBarrel]).map(b => clone(b, { missileType: MissileType.SpawnerMinion, damageMult: 0.5, penMult: 0.5 }))
+  ],
+  [TankClass.Lich]: [
+    clone(baseBarrel, { angleOffset: 0, length: 35, width: 20 }), // Basic cannon
+    ...Underseer([baseBarrel]),
+    clone(baseBarrel, { angleOffset: Math.PI, length: 30, width: 20, widthEnd: 25, type: 'drone', maxDrones: 8, reloadMult: 2, damageMult: 0.5, penMult: 0.5 }),
+  ],
   [TankClass.AutoDestroyer]: [
     ...Destroyer([baseBarrel]),
     clone(baseBarrel, { angleOffset: 0, length: 20, width: 12, posDist: 0, posAngle: 0, autoAim: true, drawBase: true }),
@@ -835,9 +946,9 @@ export const TANK_CLASSES: Record<TankClass, BarrelDef[]> = {
   ],
   [TankClass.Cluster]: [
     ...Launcher([baseBarrel]).map(b => clone(b, { missileType: TankClass.TripleShot })),
-    clone(baseBarrel, { length: 15, width: 0, widthEnd:10, xOffset: 20}),
-    clone(baseBarrel, { length: 15, width: 0, widthEnd:10, angleOffset: Math.PI / 16, xOffset: 20}),
-    clone(baseBarrel, { length: 15, width: 0, widthEnd:10, angleOffset: -Math.PI / 16, xOffset: 20}),
+    clone(baseBarrel, { length: 15, width: 0, widthEnd:10, xOffset: 20, visualOnly: true}),
+    clone(baseBarrel, { length: 15, width: 0, widthEnd:10, angleOffset: Math.PI / 16, xOffset: 20, visualOnly: true}),
+    clone(baseBarrel, { length: 15, width: 0, widthEnd:10, angleOffset: -Math.PI / 16, xOffset: 20, visualOnly: true}),
   ],
   [TankClass.Overdrive]: [
      ...Overseer([baseBarrel]).map(b => clone(b, {hasAutoTurret: true})),
@@ -851,32 +962,79 @@ export const TANK_CLASSES: Record<TankClass, BarrelDef[]> = {
      ...MegaTrapper([baseBarrel]).map(b => clone(b, { hasAutoTurret: true})),
     AUTO_BULLET_INDICATOR
   ],
-  [TankClass.Mechanic]: [
-    ...TriTrapper([baseBarrel]).map(b => clone(b, { hasAutoTurret: true})),
-    AUTO_BULLET_INDICATOR
+  [TankClass.Trapception]: [
+    ...TriTrapper([baseBarrel]).map(b => clone(b, { missileType: MissileType.Trapception, penMult: 1.5 })),
+   clone(baseBarrel, {
+    length:15,
+    width: 30,
+    widthEnd: 0,
+    xOffset: 12,
+    visualOnly: true}),
+   clone(baseBarrel, {
+    angleOffset: Math.PI * 2/3,
+    length:15,
+    width: 30,
+    widthEnd: 0,
+    xOffset: 12,
+    visualOnly: true}),
+   clone(baseBarrel, {
+    angleOffset: Math.PI * 4/3,
+    length:15,
+    width: 30,
+    widthEnd: 0,
+    xOffset: 12,
+    visualOnly: true}),
   ],
   [TankClass.Autoception]: [
+    AUTO_BULLET_INDICATOR,
     clone(baseBarrel, { angleOffset: 0, length: 20, width: 12, posDist: 15, posAngle: 0, autoAim: true, delay: 0, drawBase: true, hasAutoTurret: true} ),
     clone(baseBarrel, { angleOffset: 0, length: 20, width: 12, posDist: 15, posAngle: Math.PI * 2/3, autoAim: true, delay: 0.33, drawBase: true, hasAutoTurret: true} ),
     clone(baseBarrel, { angleOffset: 0, length: 20, width: 12, posDist: 15, posAngle: Math.PI * 4/3, autoAim: true, delay: 0.66, drawBase: true,hasAutoTurret: true} ),
-    AUTO_BULLET_INDICATOR
   ],
   [TankClass.TwinLauncher]: [
     ...Launcher([baseBarrel]).map(b => clone(b, { missileType: TankClass.Twin })),
-    clone([baseBarrel], {
+    clone(baseBarrel, {
       length: 15,
       width: 30,
       angleOffset: Math.PI/8,
       widthEnd: 0,
       xOffset: 12,
       visualOnly: true}),
-    clone([baseBarrel], {
+    clone(baseBarrel, {
       length: 15,
       width: 30,
       angleOffset: -Math.PI/8,
       widthEnd: 0,
       xOffset: 12,
       visualOnly: true})
+  ],
+  [TankClass.MachineWark]: Twin(MachineTrapper([baseBarrel])),
+  [TankClass.Mechanic]: [
+     ...TriTrapper([baseBarrel]).map(b => clone(b, {hasAutoTurret: true})),
+     AUTO_BULLET_INDICATOR
+  ],
+  [TankClass.Sprinkler]: Sprinkler([baseBarrel]),
+  [TankClass.Mosaic]: [
+    ...Pounder([baseBarrel]).map(b => clone(b, {hasAutoTurret: true})),
+    ...Hybrid([baseBarrel]).map(b => clone(b, {hasAutoTurret: true})),
+    AUTO_BULLET_INDICATOR
+  ],
+  [TankClass.Company]: [
+    ...Pounder([baseBarrel]),
+    ...Pounder(Hybrid([baseBarrel])),
+  ],
+  [TankClass.Spawner]: [
+    ...Spawner([baseBarrel]).map(b => clone(b, {missileType: MissileType.SpawnerMinion})),
+  ],
+  [TankClass.Carrier]: [
+    ...Carrier([baseBarrel]).map(b => clone(b, {missileType: MissileType.SpawnerMinion})),
+  ],
+  [TankClass.Factory]: [
+    ...Factory([baseBarrel]).map(b => clone(b, {missileType: MissileType.FactoryMinion})),
+  ],
+  [TankClass.Overmind]: [
+    ...Overmind([baseBarrel]).map(b => clone(b, {missileType: MissileType.SpawnerMinion})),
+    AUTO_BULLET_INDICATOR
   ]
 };
 
@@ -907,8 +1065,25 @@ const MISSILE_BARRELS_INTERNAL: Partial<Record<string, BarrelDef[]>> = {
     clone(baseBarrel, { angleOffset: Math.PI, length: 20, width: 15, damageMult: 0.5, speedMult: 1, penMult: 0.5, reloadMult: 0.5, drawBase: true, baseType: 'triangle' }),
     clone(baseBarrel, { angleOffset: Math.PI + Math.PI / 6, length: 18, width: 12, damageMult: 0.4, speedMult: 1, penMult: 0.4, reloadMult: 0.5 }),
     clone(baseBarrel, { angleOffset: Math.PI - Math.PI / 6, length: 18, width: 12, damageMult: 0.4, speedMult: 1, penMult: 0.4, reloadMult: 0.5 })
+  ],
+  [MissileType.Trapception]: [
+    clone(baseBarrel, { angleOffset: Math.PI/4, length: 25/3, width: 5, visualOnly: true, reloadMult: 999, delay: 1.5 }),
+    clone(baseBarrel, { angleOffset: Math.PI/4, length: 5, width: 5, widthEnd: 7, xOffset: 25/3, type: 'trap', bulletSizeMult: 5/15, reloadMult: .75, damageMult: .5, penMult: .5 }),
+    clone(baseBarrel, { angleOffset: 3*Math.PI/4, length: 25/3, width: 5, visualOnly: true, reloadMult: 999, delay: 1.5  }),
+    clone(baseBarrel, { angleOffset: 3*Math.PI/4, length: 5, width: 5, widthEnd: 7, xOffset: 25/3, type: 'trap', bulletSizeMult: 5/15, reloadMult: .75, damageMult: .5, penMult: .5 }),
+    clone(baseBarrel, { angleOffset: 5*Math.PI/4, length: 25/3, width: 5, visualOnly: true, reloadMult: 999, delay: 1.5  }),
+    clone(baseBarrel, { angleOffset: 5*Math.PI/4, length: 5, width: 5, widthEnd: 7, xOffset: 25/3, type: 'trap', bulletSizeMult: 5/15, reloadMult: .75, damageMult: .5, penMult: .5 }),
+    clone(baseBarrel, { angleOffset: 7*Math.PI/4, length: 25/3, width: 5, visualOnly: true, reloadMult: 999, delay: 1.5  }),
+    clone(baseBarrel, { angleOffset: 7*Math.PI/4, length: 5, width: 5, widthEnd: 7, xOffset: 25/3, type: 'trap', bulletSizeMult: 5/15, reloadMult: .75, damageMult: .5, penMult: .5 })
+  ],
+  [MissileType.SpawnerMinion]: [
+    clone(baseBarrel, { width: 10, length: 20, reloadMult: 0.75, damageMult: 0.5, penMult: 0.5, speedMult: 2})
+  ],
+  [MissileType.FactoryMinion]: [
+    clone(baseBarrel, { width: 12, length: 23, reloadMult: 0.65, damageMult: 0.8, penMult: 0.8, speedMult: 2.5})
   ]
-};
+}
+;
 
 export function getMissileBarrels(missileType: MissileType): BarrelDef[] {
   if (missileType === MissileType.None) return [];
@@ -946,27 +1121,32 @@ export const UPGRADE_PATHS: Partial<Record<TankClass, TankClass[]>> = {
   [TankClass.MachineGun]: [TankClass.Gunner, TankClass.MachineTrapper, TankClass.GatlingGun],
   [TankClass.Pounder]: [TankClass.Destroyer, TankClass.MegaTrapper, TankClass.Composition, TankClass.Howitzer, TankClass.Launcher],
   [TankClass.FlankGuard]: [TankClass.TriAngle, TankClass.QuadTank, TankClass.TwinFlank, TankClass.Auto3, TankClass.TriTrapper, TankClass.TrapGuard],
-  [TankClass.Director]: [TankClass.Overseer, TankClass.Cruiser, TankClass.Manager, TankClass.BigCheese],
+  [TankClass.Director]: [TankClass.Overseer, TankClass.Underseer, TankClass.Cruiser, TankClass.Spawner, TankClass.Manager, TankClass.BigCheese],
+  [TankClass.Underseer]: [TankClass.AutoUnderseer, TankClass.Necromancer, TankClass.GreyGoo, TankClass.Lich, TankClass.Pythonist],
   [TankClass.Trapper]: [TankClass.TriTrapper, TankClass.MegaTrapper, TankClass.Overtrapper, TankClass.Wark, TankClass.TrapGuard, TankClass.MachineTrapper],
   
+  [TankClass.Spawner]: [TankClass.Carrier, TankClass.Factory, TankClass.Overmind, TankClass.GreyGoo],
+  [TankClass.Pythonist]: [],
+  
   [TankClass.TripleShot]: [TankClass.Triplet, TankClass.PentaShot, TankClass.Spreadshot, TankClass.DoubleTriple, TankClass.Wamork],
-  [TankClass.QuadTank]: [TankClass.OctoTank, TankClass.Auto5, TankClass.Fogmaker, TankClass.Harvester, TankClass.Alloy],
+  [TankClass.QuadTank]: [TankClass.OctoTank, TankClass.Auto5, TankClass.Fogmaker, TankClass.Harvester, TankClass.Alloy, TankClass.Sprinkler],
   [TankClass.TwinFlank]: [TankClass.OctoTank, TankClass.Battleship, TankClass.Trapezoid, TankClass.TripleTwin, TankClass.Bulwark, TankClass.DoubleTriple, TankClass.Warkwark],
   [TankClass.Assassin]: [TankClass.Ranger, TankClass.Stalker, TankClass.Executioner, TankClass.Railgun, TankClass.Locomotive],
   [TankClass.Overseer]: [TankClass.Overlord, TankClass.Overtrapper, TankClass.Commander, TankClass.AutoOverseer, TankClass.Overdrive],
   [TankClass.Cruiser]: [TankClass.Battleship, TankClass.Commander, TankClass.AutoCruiser, TankClass.Shipyard],
   [TankClass.Hunter]: [TankClass.Predator, TankClass.Streamliner, TankClass.Falconer, TankClass.Executioner, TankClass.Mortar],
-  [TankClass.TriTrapper]: [TankClass.TriMegaTrapper, TankClass.PentaTrapper, TankClass.HexaTrapper, TankClass.Sentinel, TankClass.Alloy, TankClass.Mechanic],
+  [TankClass.TriTrapper]: [TankClass.TriMegaTrapper, TankClass.PentaTrapper, TankClass.HexaTrapper, TankClass.Sentinel, TankClass.Alloy, TankClass.Mechanic, TankClass.Trapception],
   [TankClass.MegaTrapper]: [TankClass.UltraTrapper, TankClass.TriMegaTrapper, TankClass.Loophole, TankClass.Engineer],
-  [TankClass.Destroyer]: [TankClass.Annihilator, TankClass.Hybrid, TankClass.UltraTrapper, TankClass.AutoDestroyer, TankClass.Gustav, TankClass.BigCheese, TankClass.Hurler],
-  [TankClass.Composition]: [TankClass.Hybrid, TankClass.Overpounder, TankClass.AutoComposition],
+  [TankClass.Destroyer]: [TankClass.Annihilator, TankClass.Excavator, TankClass.Hybrid, TankClass.UltraTrapper, TankClass.AutoDestroyer, TankClass.Gustav, TankClass.BigCheese, TankClass.Hurler],
+  [TankClass.Excavator]: [],
+  [TankClass.Composition]: [TankClass.Hybrid, TankClass.Overpounder, TankClass.AutoComposition, TankClass.Buster, TankClass.Mosaic, TankClass.Company],
   [TankClass.Gunner]: [TankClass.Streamliner, TankClass.AutoGunner, TankClass.GunnerTrapper, TankClass.Nailgun, TankClass. Ratfest],
   [TankClass.TriAngle]: [TankClass.Booster, TankClass.Fighter, TankClass.Trapezoid, TankClass.Surfer, TankClass.Fan],
   [TankClass.Auto3]: [TankClass.Auto5, TankClass.AutoGunner, TankClass.Mega3, TankClass.Auto4, TankClass.Sentinel, TankClass.Harvester, TankClass.Autoception],
-  [TankClass.Wark]: [TankClass.Bulwark, TankClass.AutoWark, TankClass.Wamork, TankClass.Warkle, TankClass.Warkwark],
+  [TankClass.Wark]: [TankClass.Bulwark, TankClass.AutoWark, TankClass.Wamork, TankClass.Warkle, TankClass.Warkwark, TankClass.MachineWark],
   [TankClass.TrapGuard]: [TankClass.Bulwark, TankClass.Alloy, TankClass.GunnerTrapper, TankClass.Ternary],
-  [TankClass.MachineTrapper]: [TankClass.GatlingTrapper, TankClass.AutoMachineTrapper],
-  [TankClass.GatlingGun]: [TankClass.Sprayer, TankClass.GatlingTrapper, TankClass.Bulletstream],
+  [TankClass.MachineTrapper]: [TankClass.GatlingTrapper, TankClass.AutoMachineTrapper, TankClass.MachineWark],
+  [TankClass.GatlingGun]: [TankClass.Sprayer, TankClass.GatlingTrapper, TankClass.Bulletstream, TankClass.Hotchkiss],
   [TankClass.Howitzer]: [TankClass.Gustav, TankClass.Locomotive, TankClass.AutoHowitzer, TankClass.Mortar],
   [TankClass.Launcher]: [TankClass.Rocketeer, TankClass.Buster, TankClass.Deployer, TankClass.Hurler, TankClass.FieldGun, TankClass.Occupier, TankClass.Cluster, TankClass.Payload, TankClass.TwinLauncher]
 };
@@ -978,15 +1158,16 @@ export const FOV_MULT: Record<number, TankClass[]> = {
     TankClass.HexaTrapper, TankClass.Wark, TankClass.Bulwark, TankClass.AutoWark,
     TankClass.Wamork, TankClass.Warkle, TankClass.Warkwark, TankClass.GatlingGun,
     TankClass.GatlingTrapper, TankClass.Bulletstream, TankClass.AutoMachineTrapper, TankClass.TrapGuard,
-    TankClass.Alloy, TankClass.GunnerTrapper, TankClass.MachineTrapper, TankClass.Sentinel,
-    TankClass.AutoDestroyer, TankClass.Composition, TankClass.Overpounder, TankClass.AutoComposition,
-    TankClass.Sprayer, TankClass.AutoMegaTrapper, TankClass.Nailgun
+    TankClass.Alloy, TankClass.GunnerTrapper, TankClass.MachineTrapper, TankClass.MachineWark, TankClass.Sentinel,
+    TankClass.AutoDestroyer, TankClass.Composition, TankClass.Overpounder, TankClass.Hybrid, TankClass.AutoComposition,
+    TankClass.Sprayer, TankClass.AutoMegaTrapper, TankClass.Nailgun, TankClass.Mosaic, TankClass.Company
   ],
   1.25: [
     TankClass.Sniper, TankClass.Hunter, TankClass.Streamliner, TankClass.Overseer,
     TankClass.Overlord, TankClass.AutoOverseer, TankClass.Manager, TankClass.Commander, TankClass.Battleship,
     TankClass.Cruiser, TankClass.AutoCruiser, TankClass.Shipyard, TankClass.Falconer, TankClass.Howitzer,
-    TankClass.Gustav, TankClass.AutoHowitzer, TankClass.Mortar, TankClass.BigCheese
+    TankClass.Gustav, TankClass.AutoHowitzer, TankClass.Mortar, TankClass.BigCheese,
+    TankClass.Carrier, TankClass.Factory, TankClass.Overmind
   ],
   1.4: [
     TankClass.Assassin, TankClass.Stalker, TankClass.Railgun, TankClass.Predator,

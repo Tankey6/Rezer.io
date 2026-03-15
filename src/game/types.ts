@@ -1,3 +1,7 @@
+export function getEffectiveStat(stat: number): number {
+  return stat <= 7 ? stat : 7 + (stat - 7) * 0.5;
+}
+
 export enum EntityType {
   PLAYER,
   BULLET,
@@ -122,7 +126,31 @@ export enum TankClass {
   Engineer = 'Engineer',
   Mechanic = 'Mechanic',
   Autoception = 'Autoception',
-  TwinLauncher = 'Twin Launcher'
+  TwinLauncher = 'Twin Launcher',
+  Hotchkiss = 'Hotchkiss',
+  MachineWark = 'Machine Wark',
+  Sprinkler = 'Sprinkler',
+  Trapception = 'Trapception',
+  Mosaic = 'Mosaic',
+  Company = 'Company',
+  Spawner = 'Spawner',
+  Carrier = 'Carrier',
+  Factory = 'Factory',
+  Overmind = 'Overmind',
+  Excavator = 'Excavator',
+  Underseer = 'Underseer',
+  AutoUnderseer = 'Auto-Underseer',
+  Necromancer = 'Necromancer',
+  GreyGoo = 'Grey Goo',
+  Lich = 'Lich',
+  Pythonist = 'Pythonist'
+}
+
+export enum CrasherType {
+  SMALL,
+  MEDIUM,
+  LARGE,
+  LIGHTNING
 }
 
 export type MissileType = TankClass | 'None';
@@ -134,7 +162,11 @@ export const MissileType = {
   Hurler: TankClass.Hurler as MissileType,
   FieldGun: TankClass.FieldGun as MissileType,
   Occupier: TankClass.Occupier as MissileType,
-  Cluster: TankClass.Cluster as MissileType
+  Cluster: TankClass.Cluster as MissileType,
+  Trapception: TankClass.TriTrapper as MissileType,
+  SpawnerMinion: 'SpawnerMinion' as MissileType,
+  FactoryMinion: 'FactoryMinion' as MissileType,
+  UnderseerDrone: 'UnderseerDrone' as MissileType
 };
 
 export interface BarrelDef {

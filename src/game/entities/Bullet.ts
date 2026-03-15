@@ -1,6 +1,6 @@
 import { Entity } from './Entity.ts';
 import { Vector } from '../Vector.ts';
-import { EntityType, MissileType, BarrelDef } from '../types.ts';
+import { EntityType, MissileType, BarrelDef, TankClass } from '../types.ts';
 import { darkenColor } from '../utils.ts';
 import { getMissileBarrels, AUTO_TURRET_BARREL } from '../tankClasses.ts';
 
@@ -21,13 +21,16 @@ export class Bullet extends Entity {
   reloadTimers: number[] = [];
   angle: number = 0;
 
-  constructor(pos: Vector, vel: Vector, ownerId: number, damage: number, penetration: number, radius: number = 8, color: string = '#00b2e1', isRailgun: boolean = false) {
+  ownerClass: TankClass = TankClass.Basic;
+
+  constructor(pos: Vector, vel: Vector, ownerId: number, damage: number, penetration: number, radius: number = 8, color: string = '#00b2e1', isRailgun: boolean = false, ownerClass: TankClass = TankClass.Basic) {
     super(pos, radius, color, EntityType.BULLET, 1);
     this.vel = vel;
     this.ownerId = ownerId;
     this.damage = damage;
     this.penetration = penetration;
     this.isRailgun = isRailgun;
+    this.ownerClass = ownerClass;
     this.angle = Math.atan2(vel.y, vel.x);
   }
 

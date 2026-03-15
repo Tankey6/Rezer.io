@@ -1,6 +1,6 @@
 import { Entity } from './Entity.ts';
 import { Vector } from '../Vector.ts';
-import { EntityType } from '../types.ts';
+import { EntityType, CrasherType } from '../types.ts';
 import { darkenColor } from '../utils.ts';
 
 export class Crasher extends Entity {
@@ -8,9 +8,37 @@ export class Crasher extends Entity {
   damage: number = 80;
   speed: number = 180;
   target: Entity | null = null;
+  crasherType: CrasherType;
 
-  constructor(pos: Vector) {
-    super(pos, 12, '#f177dd', EntityType.CRASHER, 40);
+  constructor(pos: Vector, crasherType: CrasherType = CrasherType.SMALL) {
+    let radius = 12;
+    let health = 120;
+    let color = '#f177dd';
+    let speed = 180;
+    let damage = 80;
+
+    if (crasherType === CrasherType.MEDIUM) {
+      radius = 20;
+      health = 300;
+      speed = 150;
+      damage = 120;
+    } else if (crasherType === CrasherType.LARGE) {
+      radius = 35;
+      health = 600;
+      speed = 120;
+      damage = 200;
+    } else if (crasherType === CrasherType.LIGHTNING) {
+      radius = 15;
+      health = 250;
+      color = '#fcf771'
+      speed = 250;
+      damage = 800;
+    }
+
+    super(pos, radius, color, EntityType.CRASHER, health);
+    this.crasherType = crasherType;
+    this.speed = speed;
+    this.damage = damage;
     this.vel = new Vector((Math.random() - 0.5) * 50, (Math.random() - 0.5) * 50);
   }
 

@@ -45,7 +45,7 @@ export const UpgradeTree: React.FC<UpgradeTreeProps> = ({ onClose }) => {
         TankClass.Destroyer, TankClass.MegaTrapper, TankClass.Composition,
         TankClass.TriAngle, TankClass.Auto3, TankClass.TriTrapper, TankClass.TrapGuard,
         TankClass.Overseer, TankClass.Cruiser, TankClass.Manager,
-        TankClass.Howitzer, TankClass.Launcher
+        TankClass.Howitzer, TankClass.Launcher, TankClass.Spawner, TankClass.Underseer
       ];
       if (tank === TankClass.Basic) return 0;
       if (tier1.includes(tank)) return 15;

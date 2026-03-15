@@ -1,6 +1,6 @@
 import { Entity } from './Entity.ts';
 import { Vector } from '../Vector.ts';
-import { EntityType, TankClass, BarrelDef } from '../types.ts';
+import { EntityType, TankClass, BarrelDef, getEffectiveStat } from '../types.ts';
 import { darkenColor } from '../utils.ts';
 import { TANK_CLASSES, UPGRADE_PATHS } from '../tankClasses.ts';
 
@@ -46,7 +46,7 @@ export class Player extends Entity {
 
   initBarrels() {
     const barrels = TANK_CLASSES[this.tankClass];
-    const baseReloadTime = Math.max(0.05, Math.pow(0.9, this.stats.reload));
+    const baseReloadTime = Math.max(0.05, Math.pow(0.9, getEffectiveStat(this.stats.reload)));
     this.barrelTimers = barrels.map(b => {
       const reloadTime = baseReloadTime * b.reloadMult;
       return reloadTime * (1 - b.delay);
@@ -118,8 +118,8 @@ export class Player extends Entity {
         TankClass.Gunner, TankClass.MachineTrapper, TankClass.GatlingGun,
         TankClass.Destroyer, TankClass.MegaTrapper, TankClass.Composition,
         TankClass.TriAngle, TankClass.Auto3, TankClass.TriTrapper, TankClass.TrapGuard,
-        TankClass.Overseer, TankClass.Cruiser, TankClass.Manager,
-        TankClass.Howitzer, TankClass.Launcher
+        TankClass.Overseer, TankClass.Underseer, TankClass.Cruiser,
+        TankClass.Howitzer, TankClass.Launcher, TankClass.Spawner
       ];
       if (tier1.includes(tank)) return 15;
       if (tier2.includes(tank)) return 30;
@@ -133,7 +133,7 @@ export class Player extends Entity {
     super.update(dt);
     
     if (this.autoSpin) {
-      this.angle += dt * 2;
+      this.angle += dt*1.2;
     }
     
     if (this.isInvincible) {
@@ -151,7 +151,7 @@ export class Player extends Entity {
     if (this.health < this.maxHealth) {
       const timeSinceLastHit = (Date.now() - this.lastHitTime) / 1000;
       const healingMultiplier = Math.pow(1.05, Math.max(0, timeSinceLastHit - 5)); // Start healing exponentially after 5 seconds
-      this.health += (0.5 + this.stats.healthRegen * 1.5) * healingMultiplier * dt;
+      this.health += (0.5 + getEffectiveStat(this.stats.healthRegen) * 1.5) * healingMultiplier * dt;
       if (this.health > this.maxHealth) this.health = this.maxHealth;
     }
 
@@ -232,8 +232,18 @@ export class Player extends Entity {
     }
 
     // Draw body
+    const isSquareBody = this.tankClass === TankClass.Underseer || 
+                         this.tankClass === TankClass.AutoUnderseer ||
+                         this.tankClass === TankClass.Necromancer ||
+                         this.tankClass === TankClass.GreyGoo ||
+                         this.tankClass === TankClass.Lich ||
+                         this.tankClass === TankClass.Pythonist;
     ctx.beginPath();
-    ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+    if (isSquareBody) {
+      ctx.rect(-this.radius, -this.radius, this.radius * 2, this.radius * 2);
+    } else {
+      ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+    }
     ctx.fillStyle = this.color;
     ctx.fill();
     ctx.strokeStyle = outlineColor;

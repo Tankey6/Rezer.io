@@ -1,6 +1,6 @@
 import { Entity } from './Entity.ts';
 import { Vector } from '../Vector.ts';
-import { EntityType, MissileType, BarrelDef } from '../types.ts';
+import { EntityType, MissileType, BarrelDef, TankClass } from '../types.ts';
 import { darkenColor } from '../utils.ts';
 import { getMissileBarrels, AUTO_TURRET_BARREL } from '../tankClasses.ts';
 
@@ -19,12 +19,15 @@ export class Trap extends Entity {
   autoAngle: number = 0;
   reloadTimers: number[] = [];
 
-  constructor(pos: Vector, vel: Vector, ownerId: number, color: string, damage: number, penetration: number, radius: number = 12) {
+  ownerClass: TankClass = TankClass.Basic;
+
+  constructor(pos: Vector, vel: Vector, ownerId: number, color: string, damage: number, penetration: number, radius: number = 12, ownerClass: TankClass = TankClass.Basic) {
     super(pos, radius, color, EntityType.TRAP, 1);
     this.vel = vel;
     this.ownerId = ownerId;
     this.damage = damage;
     this.penetration = penetration;
+    this.ownerClass = ownerClass;
     this.angle = Math.random() * Math.PI * 2;
     this.spinSpeed = (Math.random() - 0.5) * Math.PI * 2; // Random spin speed
   }

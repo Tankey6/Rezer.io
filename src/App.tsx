@@ -149,7 +149,7 @@ export default function App() {
   // Check if mouse is in the bottom left area
   const isHoveringMenuArea = mousePos.x < 300 && mousePos.y > window.innerHeight - 300;
   
-  const allStatsMaxed = gameState?.stats ? Object.values(gameState.stats).every((val: any) => val >= 7) : false;
+  const allStatsMaxed = gameState?.stats ? Object.values(gameState.stats).every((val: any) => val >= (gameState?.level >= 80 ? 14 : 7)) : false;
   const showUpgrades = gameState && !allStatsMaxed && (gameState.skillPoints > 0 || isHoveringMenuArea);
 
   return (
@@ -298,7 +298,7 @@ export default function App() {
             )}
             {Object.entries(statLabels).map(([key, label], index) => {
               const level = gameState.stats?.[key] || 0;
-              const maxLevel = 7;
+              const maxLevel = gameState.level >= 80 ? 14 : 7;
               const canUpgrade = (gameState.skillPoints || 0) > 0 && level < maxLevel;
 
               return (
@@ -316,12 +316,21 @@ export default function App() {
                     <div 
                       className="absolute left-0 top-0 bottom-0 transition-all duration-200"
                       style={{ 
-                        width: `${(level / maxLevel) * 100}%`,
+                        width: `${(Math.min(level, 7) / 7) * 100}%`,
                         backgroundColor: statColors[key]
                       }}
                     />
+                    {level > 7 && (
+                      <div 
+                        className="absolute left-0 top-0 bottom-0 transition-all duration-200"
+                        style={{ 
+                          width: `${((level - 7) / 7) * 100}%`,
+                          backgroundColor: 'rgba(255, 255, 255, 0.3)'
+                        }}
+                      />
+                    )}
                     <span className="relative z-10 text-white text-xs font-bold drop-shadow-md flex justify-between w-full">
-                      <span>{label}</span>
+                      <span>{label} {level > 7 ? `7 (+${level - 7})` : ''}</span>
                       <span className="opacity-70">[{index + 1}]</span>
                     </span>
                   </div>

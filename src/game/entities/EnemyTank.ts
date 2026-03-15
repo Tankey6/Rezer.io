@@ -1,6 +1,6 @@
 import { Entity } from './Entity.ts';
 import { Vector } from '../Vector.ts';
-import { EntityType, TankClass, BarrelDef, ShapeType } from '../types.ts';
+import { EntityType, TankClass, BarrelDef, ShapeType, getEffectiveStat } from '../types.ts';
 import { TANK_CLASSES, UPGRADE_PATHS } from '../tankClasses.ts';
 import { darkenColor } from '../utils.ts';
 import { Bullet } from './Bullet.ts';
@@ -44,7 +44,7 @@ export class EnemyTank extends Entity {
     this.tankClass = tankClass;
     
     const barrels = TANK_CLASSES[tankClass];
-    const baseReloadTime = Math.max(0.05, Math.pow(0.9, this.stats.reload));
+    const baseReloadTime = Math.max(0.05, Math.pow(0.9, getEffectiveStat(this.stats.reload)));
     this.barrelAngles = barrels.map(b => this.angle + b.angleOffset);
     this.barrelTimers = barrels.map(b => {
       const reloadTime = baseReloadTime * b.reloadMult;
@@ -103,7 +103,8 @@ export class EnemyTank extends Entity {
       let upgraded = false;
       
       for (const group of [p1, p2, p3]) {
-        const available = group.filter(idx => this.stats[statKeys[idx]] < 7);
+        const maxStat = this.level >= 80 ? 14 : 7;
+        const available = group.filter(idx => this.stats[statKeys[idx]] < maxStat);
         if (available.length > 0) {
           const idx = available[Math.floor(Math.random() * available.length)];
           this.stats[statKeys[idx]]++;
@@ -129,8 +130,8 @@ export class EnemyTank extends Entity {
         TankClass.Gunner, TankClass.MachineTrapper, TankClass.GatlingGun,
         TankClass.Destroyer, TankClass.MegaTrapper, TankClass.Composition,
         TankClass.TriAngle, TankClass.Auto3, TankClass.TriTrapper, TankClass.TrapGuard,
-        TankClass.Overseer, TankClass.Cruiser, TankClass.Manager,
-        TankClass.Howitzer, TankClass.Launcher
+        TankClass.Overseer, TankClass.Underseer, TankClass.Cruiser, TankClass.Manager,
+        TankClass.Howitzer, TankClass.Launcher, TankClass.Spawner, TankClass.BigCheese
       ];
       if (tier1.includes(tank)) return 15;
       if (tier2.includes(tank)) return 30;
@@ -141,7 +142,7 @@ export class EnemyTank extends Entity {
     if (available.length > 0) {
       this.tankClass = available[Math.floor(Math.random() * available.length)];
       const barrels = TANK_CLASSES[this.tankClass];
-      const baseReloadTime = Math.max(0.05, Math.pow(0.9, this.stats.reload));
+      const baseReloadTime = Math.max(0.05, Math.pow(0.9, getEffectiveStat(this.stats.reload)));
       this.barrelAngles = barrels.map(b => this.angle + b.angleOffset);
       this.barrelTimers = barrels.map(b => {
         const reloadTime = baseReloadTime * b.reloadMult;
@@ -221,7 +222,7 @@ export class EnemyTank extends Entity {
       const strafeVec = new Vector(-dir.y, dir.x).mult(this.strafeDir);
       moveVec = moveVec.add(strafeVec.mult(0.8));
 
-      const speedMult = 100 + this.stats.movementSpeed * 10;
+      const speedMult = 100 + getEffectiveStat(this.stats.movementSpeed) * 10;
       this.vel = this.vel.add(moveVec.normalize().mult(speedMult * 1.2 * dt)).limit(speedMult * 1.5);
 
     } else {
@@ -243,7 +244,7 @@ export class EnemyTank extends Entity {
 
     // Shooting logic
     const barrels = TANK_CLASSES[this.tankClass];
-    const baseReloadTime = Math.max(0.05, Math.pow(0.9, this.stats.reload));
+    const baseReloadTime = Math.max(0.05, Math.pow(0.9, getEffectiveStat(this.stats.reload)));
     
     let isAnyBarrelShooting = false;
     for (let i = 0; i < barrels.length; i++) {
@@ -309,6 +310,33 @@ export class EnemyTank extends Entity {
 
       if (barrel.type === 'trap') isShooting = true; // Trappers fire constantly to build a field
       if (barrel.visualOnly) isShooting = false;
+      
+      if (isShooting) {
+        if (barrel.type === 'drone' || barrel.type === 'cruiser_drone') {
+          const isCruiser = barrel.type === 'cruiser_drone';
+          const currentCount = isCruiser ? cruiserDroneCount : droneCount;
+          
+          let maxDrones = barrel.maxDrones || 8;
+          const isUnderseerClass = this.tankClass === TankClass.Underseer || 
+                                   this.tankClass === TankClass.AutoUnderseer ||
+                                   this.tankClass === TankClass.Necromancer ||
+                                   this.tankClass === TankClass.Lich ||
+                                   this.tankClass === TankClass.Pythonist;
+          if (isUnderseerClass && !isCruiser) {
+            const reloadPoints = this.stats.reload || 0;
+            maxDrones = 8;
+            for (let r = 0; r < reloadPoints; r++) {
+              if (r < 7) maxDrones += 4;
+              else maxDrones += 2;
+            }
+          }
+
+          if (currentCount >= maxDrones) {
+            isShooting = false;
+          }
+        }
+      }
+
       if (isShooting) isAnyBarrelShooting = true;
 
       if (isShooting) {
@@ -330,23 +358,16 @@ export class EnemyTank extends Entity {
             spawnPos = this.pos.add(bForward.mult(barrel.xOffset)).add(bRight.mult(barrel.yOffset)).add(bForward.mult(barrel.length));
           }
           
-          const bulletSpeed = (400 + this.stats.bulletSpeed * 60) * barrel.speedMult;
-          const bulletDamage = (750 + this.stats.bulletDamage * 150) * barrel.damageMult * (bulletSpeed / 400);
-          const bulletPen = (0.2 + this.stats.bulletPenetration * 0.05) * barrel.penMult;
+          const bulletSpeed = (400 + getEffectiveStat(this.stats.bulletSpeed) * 60) * barrel.speedMult;
+          const bulletDamage = (750 + getEffectiveStat(this.stats.bulletDamage) * 150) * barrel.damageMult * (bulletSpeed / 400);
+          const bulletPen = (0.2 + getEffectiveStat(this.stats.bulletPenetration) * 0.05) * barrel.penMult;
           
           const spread = (Math.random() - 0.5) * barrel.spread;
           const vel = new Vector(Math.cos(bAngle + spread), Math.sin(bAngle + spread)).mult(bulletSpeed);
           
           const type = barrel.type || 'bullet';
           
-          if (type === 'drone' || type === 'cruiser_drone') {
-            const currentCount = type === 'cruiser_drone' ? cruiserDroneCount : droneCount;
-            if (currentCount < (barrel.maxDrones || 8)) {
-              spawn(type, spawnPos, vel, { bulletDamage, bulletPen, bulletSpeed }, barrel);
-            }
-          } else {
-            spawn(type, spawnPos, vel, { bulletDamage, bulletPen, bulletSpeed }, barrel);
-          }
+          spawn(type, spawnPos, vel, { bulletDamage, bulletPen, bulletSpeed }, barrel);
 
           // Recoil
           const recoil = barrel.recoilMult !== undefined ? barrel.recoilMult : barrel.damageMult;
@@ -355,9 +376,9 @@ export class EnemyTank extends Entity {
       } else {
         const reloadTime = baseReloadTime * barrel.reloadMult;
         const targetTime = reloadTime * (1 - barrel.delay);
-        this.barrelTimers[i] += dt;
-        if (this.barrelTimers[i] > targetTime) {
-          this.barrelTimers[i] = targetTime;
+        if (this.barrelTimers[i] < targetTime) {
+          this.barrelTimers[i] += dt;
+          if (this.barrelTimers[i] > targetTime) this.barrelTimers[i] = targetTime;
         }
       }
     }
@@ -381,7 +402,7 @@ export class EnemyTank extends Entity {
     
     // Regen
     if (this.health < this.maxHealth) {
-      this.health += (0.5 + this.stats.healthRegen * 1.5) * dt;
+      this.health += (0.5 + getEffectiveStat(this.stats.healthRegen) * 1.5) * dt;
       if (this.health > this.maxHealth) this.health = this.maxHealth;
     }
   }
@@ -432,8 +453,17 @@ export class EnemyTank extends Entity {
     }
 
     // Draw body
+    const isSquareBody = this.tankClass === TankClass.Underseer || 
+                         this.tankClass === TankClass.AutoUnderseer ||
+                         this.tankClass === TankClass.Necromancer ||
+                         this.tankClass === TankClass.GreyGoo ||
+                         this.tankClass === TankClass.Lich;
     ctx.beginPath();
-    ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+    if (isSquareBody) {
+      ctx.rect(-this.radius, -this.radius, this.radius * 2, this.radius * 2);
+    } else {
+      ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+    }
     ctx.fillStyle = this.color;
     ctx.fill();
     ctx.strokeStyle = outlineColor;

@@ -38,12 +38,12 @@ export class Shape extends Entity {
     }
     
     if (type === ShapeType.ROCK) {
-      health = sizeMult * 5 * formulaSides * (100 * Math.pow(formulaSides-1, 2));
+      health = sizeMult * 5 * formulaSides * (100 * Math.pow(formulaSides-1, 2.5));
       xpValue = sizeMult * 100 * Math.pow(formulaSides, 3+(formulaSides)/3);
     } else if (isAlpha) {
       radius *= 3;
       damage *= 3;
-      health = 5 * formulaSides * (100 * Math.pow(formulaSides-1, 2));
+      health = 5 * formulaSides * (100 * Math.pow(formulaSides-1, 2.5));
       xpValue = 100 * Math.pow(formulaSides, 3+(formulaSides)/3);
     } else {
       health = 100 * Math.pow(formulaSides-1, 2);
@@ -63,7 +63,7 @@ export class Shape extends Entity {
   update(dt: number) {
     super.update(dt);
     this.angle += this.rotSpeed * dt;
-    this.vel = this.vel.mult(0.99); // Friction
+    this.vel = this.vel.mult(this.isAlpha ? 0.85 : 0.98); // Friction
   }
 
   draw(ctx: CanvasRenderingContext2D) {

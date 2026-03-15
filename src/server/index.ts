@@ -12,6 +12,7 @@ import { Drone } from '../game/entities/Drone.ts';
 import { Crasher } from '../game/entities/Crasher.ts';
 import { calculateTotalXp } from '../game/utils.ts';
 import http from 'http';
+import { performance } from 'perf_hooks';
 
 interface ExtWebSocket extends WebSocket {
   playerId?: number;
@@ -20,6 +21,7 @@ interface ExtWebSocket extends WebSocket {
 export function setupMultiplayer(server: http.Server) {
   const game = new Game(undefined, true);
   const playerSockets = new Map<number, ExtWebSocket>();
+  const deadPlayerCameras = new Map<number, { pos: Vector, killerId: number | null }>();
   
   let nextPlayerId = 1;
 
@@ -30,6 +32,8 @@ export function setupMultiplayer(server: http.Server) {
       console.log('Found socket for player', playerId);
       const player = game.players.get(playerId);
       if (player) {
+        deadPlayerCameras.set(playerId, { pos: player.pos.copy(), killerId });
+        
         const survivalTime = Math.floor((Date.now() - player.startTime) / 1000);
         let killedBy = "Unknown";
         if (killerId !== null) {
@@ -46,6 +50,12 @@ export function setupMultiplayer(server: http.Server) {
               const crasher = game.crashers.find(c => c.id === killerId);
               if (crasher) {
                 killedBy = "Crasher";
+              } else {
+                // Check shapes
+                const shape = game.shapes.find(s => s.id === killerId);
+                if (shape) {
+                  killedBy = "Polygon";
+                }
               }
             }
           }
@@ -191,7 +201,23 @@ export function setupMultiplayer(server: http.Server) {
     for (const [playerId, ws] of playerSockets.entries()) {
       if (ws.readyState !== WebSocket.OPEN) continue;
       const player = game.players.get(playerId);
-      if (!player) continue;
+      let cameraPos = player?.pos;
+      if (!player) {
+        const deadCam = deadPlayerCameras.get(playerId);
+        if (!deadCam) continue;
+        
+        // Update camera pos to follow killer if possible
+        if (deadCam.killerId !== null) {
+          const killer = game.players.get(deadCam.killerId) || 
+                         game.enemies.find(e => e.id === deadCam.killerId) ||
+                         game.crashers.find(c => c.id === deadCam.killerId) ||
+                         game.shapes.find(s => s.id === deadCam.killerId);
+          if (killer && !killer.dead) {
+            deadCam.pos = killer.pos.copy();
+          }
+        }
+        cameraPos = deadCam.pos;
+      }
 
       writer.reset();
       writer.writeUint8(1); // STATE
@@ -200,7 +226,7 @@ export function setupMultiplayer(server: http.Server) {
       // Culling radius (slightly larger than typical FOV to avoid pop-in)
       const cullRadius = 2500;
       
-      const nearbyEntities = game.grid.getNearby(player.pos.x, player.pos.y, cullRadius);
+      const nearbyEntities = game.grid.getNearby(cameraPos.x, cameraPos.y, cullRadius);
       
       const visiblePlayers: Player[] = [];
       const visibleBullets: Bullet[] = [];
@@ -231,12 +257,12 @@ export function setupMultiplayer(server: http.Server) {
 
       // Always include all rocks for minimap visibility
       for (const s of game.shapes) {
-        if (s.shapeType === ShapeType.ROCK) {
+        if (s.shapeType === ShapeType.ROCK && !s.dead) {
           visibleShapes.push(s);
         }
       }
 
-      if (!selfIncluded) {
+      if (!selfIncluded && player) {
         visiblePlayers.push(player);
       }
       

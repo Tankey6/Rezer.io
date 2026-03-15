@@ -1,6 +1,6 @@
 import { Entity } from './Entity.ts';
 import { Vector } from '../Vector.ts';
-import { EntityType, MissileType, BarrelDef } from '../types.ts';
+import { EntityType, MissileType, BarrelDef, TankClass } from '../types.ts';
 import { darkenColor } from '../utils.ts';
 import { getMissileBarrels, AUTO_TURRET_BARREL } from '../tankClasses.ts';
 
@@ -21,7 +21,9 @@ export class Drone extends Entity {
   autoAngle: number = 0;
   reloadTimers: number[] = [];
 
-  constructor(pos: Vector, vel: Vector, ownerId: number, color: string, damage: number, penetration: number, radius: number = 10, speed: number = 300, isCruiser: boolean = false) {
+  ownerClass: TankClass = TankClass.Basic;
+
+  constructor(pos: Vector, vel: Vector, ownerId: number, color: string, damage: number, penetration: number, radius: number = 10, speed: number = 200, isCruiser: boolean = false, ownerClass: TankClass = TankClass.Basic, missileType: MissileType = MissileType.None) {
     super(pos, radius, color, EntityType.DRONE, 1);
     this.vel = vel;
     this.ownerId = ownerId;
@@ -29,6 +31,8 @@ export class Drone extends Entity {
     this.penetration = penetration;
     this.speed = speed;
     this.isCruiser = isCruiser;
+    this.ownerClass = ownerClass;
+    this.missileType = missileType;
     this.angle = Math.atan2(vel.y, vel.x);
     if (this.isCruiser) {
       this.lifeTime = 10;
@@ -110,11 +114,38 @@ export class Drone extends Entity {
     ctx.rotate(this.angle);
     
     ctx.beginPath();
-    // Draw drone shape (triangle)
-    ctx.moveTo(this.radius, 0);
-    ctx.lineTo(-this.radius * 0.5, this.radius * 0.866);
-    ctx.lineTo(-this.radius * 0.5, -this.radius * 0.866);
-    ctx.closePath();
+    const isSpawnerMinion = this.ownerClass === TankClass.Spawner || 
+                           this.ownerClass === TankClass.Carrier || 
+                           this.ownerClass === TankClass.Factory || 
+                           this.ownerClass === TankClass.Overmind ||
+                           this.missileType === MissileType.SpawnerMinion ||
+                           this.missileType === MissileType.FactoryMinion;
+
+    const isUnderseerDrone = this.ownerClass === TankClass.Underseer || 
+                             this.ownerClass === TankClass.AutoUnderseer ||
+                             this.ownerClass === TankClass.Necromancer ||
+                             this.ownerClass === TankClass.GreyGoo ||
+                             this.ownerClass === TankClass.Lich ||
+                             this.ownerClass === TankClass.Pythonist ||
+                             this.missileType === MissileType.UnderseerDrone;
+
+    if (isUnderseerDrone) {
+      // Draw square for underseer drones
+      ctx.moveTo(-this.radius, -this.radius);
+      ctx.lineTo(this.radius, -this.radius);
+      ctx.lineTo(this.radius, this.radius);
+      ctx.lineTo(-this.radius, this.radius);
+      ctx.closePath();
+    } else if (isSpawnerMinion) {
+      // Draw circle for spawner minions
+      ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+    } else {
+      // Draw drone shape (triangle)
+      ctx.moveTo(this.radius, 0);
+      ctx.lineTo(-this.radius * 0.5, this.radius * 0.866);
+      ctx.lineTo(-this.radius * 0.5, -this.radius * 0.866);
+      ctx.closePath();
+    }
     
     ctx.fillStyle = this.color;
     ctx.fill();

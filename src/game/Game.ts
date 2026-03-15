@@ -6,7 +6,7 @@ import { Drone } from './entities/Drone.ts';
 import { Shape } from './entities/Shape.ts';
 import { Crasher } from './entities/Crasher.ts';
 import { EnemyTank } from './entities/EnemyTank.ts';
-import { ShapeType, TankClass, EntityType, MissileType, BarrelDef } from './types.ts';
+import { ShapeType, TankClass, EntityType, MissileType, BarrelDef, getEffectiveStat, CrasherType } from './types.ts';
 import { TANK_CLASSES, getFovMult, getMissileBarrels, AUTO_TURRET_BARREL } from './tankClasses.ts';
 import { Entity } from './entities/Entity.ts';
 import { SpatialGrid } from './SpatialGrid.ts';
@@ -16,10 +16,11 @@ import { calculateTotalXp } from './utils.ts';
 export class Game {
   isServer: boolean = false;
   onStateChange: ((state: any) => void) | null = null;
-  onGameOver: ((deathInfo: { level: number, tankClass: string, survivalTime: number, killedBy: string }) => void) | null = null;
+  onGameOver: ((deathInfo: { level: number, tankClass: string, survivalTime: number, killedBy: string, killerId: number }) => void) | null = null;
   onPlayerDeath: ((playerId: number, killerId: number | null) => void) | null = null;
   players: Map<number, Player> = new Map();
   myPlayerId: number | null = null;
+  killerId: number | null = null;
   inputs: Map<number, any> = new Map();
   canvas: HTMLCanvasElement;
   ctx: CanvasRenderingContext2D;
@@ -100,7 +101,7 @@ export class Game {
     this.ws.onopen = () => {
       console.log('Connected to server');
       if (this.pendingSpawnName !== null) {
-        this.spawn(this.pendingSpawnName);
+        this.spawn(this.pendingSpawnName, 1);
         this.pendingSpawnName = null;
       }
     };
@@ -229,7 +230,9 @@ export class Game {
         if (dist > 100) {
           p.pos = this.lastServerPos.copy();
         } else {
-          p.pos = p.pos.lerp(this.lastServerPos, 0.2);
+          // Hitbox-Biased Smoothing
+          const bias = Math.min(1, dist / Math.max(1, p.radius * 0.5));
+          p.pos = p.pos.lerp(this.lastServerPos, Math.max(0.2, bias));
         }
         p.vel = this.lastServerVel.copy();
         
@@ -246,10 +249,8 @@ export class Game {
       p.radius = radius;
       p.color = color;
       p.tankClass = tankClass;
-      // Only update health if the difference is significant to avoid flickering due to client-side healing
-      if (Math.abs(p.health - health) > 5) {
-        p.health = health;
-      }
+      // Always update health from server to avoid flickering
+      p.health = health;
       p.maxHealth = maxHealth;
       p.level = level;
       p.xp = xp;
@@ -595,7 +596,7 @@ export class Game {
   }
 
   applyInput(player: Player, input: any, dt: number) {
-    const speed = 200 + player.stats.movementSpeed * 12;
+    const speed = 200 + getEffectiveStat(player.stats.movementSpeed) * 12;
     const accel = speed * 3.0;
     
     if (input.keys['w'] || input.keys['arrowup']) player.vel.y -= accel * dt;
@@ -731,7 +732,16 @@ export class Game {
     
     if (this.isInsideRock(pos)) return;
     
-    this.crashers.push(new Crasher(pos));
+    let type = CrasherType.SMALL;
+    if (Math.random() < 0.1) {
+      type = CrasherType.LIGHTNING;
+    } else if (r < 500) {
+      type = CrasherType.LARGE;
+    } else if (r < 1200) {
+      type = CrasherType.MEDIUM;
+    }
+    
+    this.crashers.push(new Crasher(pos, type));
   }
 
   spawnEnemyTank() {
@@ -1111,22 +1121,22 @@ export class Game {
         const bulletRadius = 8 * (barrel.bulletSizeMult || 1);
 
         if (barrel.type === 'trap') {
-          const t = new Trap(spawnPos, vel, entity.ownerId, entity.color, bulletDamage, bulletPenetration, bulletRadius * 1.5);
+          const t = new Trap(spawnPos, vel, entity.ownerId, entity.color, bulletDamage, bulletPenetration, bulletRadius * 1.5, entity.ownerClass);
           t.hasAutoTurret = barrel.hasAutoTurret || false;
           t.missileType = barrel.missileType || MissileType.None;
           this.traps.push(t);
         } else if (barrel.type === 'drone' || barrel.type === 'cruiser_drone') {
           const isCruiser = barrel.type === 'cruiser_drone';
-          const dSpeed = isCruiser ? bulletSpeed * 0.66 : bulletSpeed * 0.33;
+          const dSpeed = isCruiser ? bulletSpeed * 0.6 : bulletSpeed * 0.3;
           const dRadius = isCruiser ? bulletRadius * 1.2 : bulletRadius * 1.8;
           const dPenetration = isCruiser ? 1 : bulletPenetration;
           const dDamage = isCruiser ? bulletDamage * 0.25 : bulletDamage;
-          const d = new Drone(spawnPos, vel, entity.ownerId, entity.color, dDamage, dPenetration, dRadius, dSpeed, isCruiser);
+          const d = new Drone(spawnPos, vel, entity.ownerId, entity.color, dDamage, dPenetration, dRadius, dSpeed, isCruiser, entity.ownerClass);
           d.hasAutoTurret = barrel.hasAutoTurret || false;
           d.missileType = barrel.missileType || MissileType.None;
           this.drones.push(d);
         } else {
-          const b = new Bullet(spawnPos, vel, entity.ownerId, bulletDamage, bulletPenetration, bulletRadius, entity.color, false);
+          const b = new Bullet(spawnPos, vel, entity.ownerId, bulletDamage, bulletPenetration, bulletRadius, entity.color, false, entity.ownerClass);
           b.hasAutoTurret = barrel.hasAutoTurret || false;
           b.missileType = barrel.missileType || MissileType.None;
           this.bullets.push(b);
@@ -1158,7 +1168,7 @@ export class Game {
             this.connect();
           } else {
             console.log('Retrying spawn...');
-            this.spawn(this.spawnName);
+            this.spawn(this.spawnName, 1);
           }
         }
       } else if (this.player) {
@@ -1245,7 +1255,7 @@ export class Game {
         player.classChanged = false;
       }
 
-      const speed = 200 + player.stats.movementSpeed * 12;
+      const speed = 200 + getEffectiveStat(player.stats.movementSpeed) * 12;
       const accel = speed * 3.0;
       
       if (input.keys['w'] || input.keys['arrowup']) player.vel.y -= accel * dt;
@@ -1262,7 +1272,7 @@ export class Game {
       const isShooting = input.mouseDown || input.autoFire;
       player.shooting = isShooting;
       const barrels = TANK_CLASSES[player.tankClass];
-      const baseReloadTime = Math.max(0.05, Math.pow(0.9, player.stats.reload));
+      const baseReloadTime = Math.max(0.05, Math.pow(0.9, getEffectiveStat(player.stats.reload)));
       
       let playerDroneCount = 0;
       let playerCruiserDroneCount = 0;
@@ -1346,58 +1356,90 @@ export class Game {
 
         if (barrelShooting) {
           const reloadTime = baseReloadTime * barrel.reloadMult;
-          player.barrelTimers[i] += dt;
           
-          if (player.barrelTimers[i] >= reloadTime) {
-            player.barrelTimers[i] -= reloadTime;
+          let canFireAtCap = true;
+          if (barrel.type === 'drone' || barrel.type === 'cruiser_drone') {
+            const isCruiser = barrel.type === 'cruiser_drone';
+            const currentCount = isCruiser ? playerCruiserDroneCount : playerDroneCount;
             
-            const bulletSpeed = (400 + player.stats.bulletSpeed * 50) * barrel.speedMult;
-            const bulletDamage = (750 + player.stats.bulletDamage * 150) * barrel.damageMult * (bulletSpeed / 400);
-            const bulletPenetration = (0.2 + player.stats.bulletPenetration * 0.05) * barrel.penMult;
-            const bulletRadius = 8 * (barrel.bulletSizeMult || 1);
-            
-            const angle = barrelAngle + (Math.random() - 0.5) * barrel.spread;
-            const dir = new Vector(Math.cos(angle), Math.sin(angle));
-            
-            if (barrel.autoAim) {
-              const bForward = new Vector(Math.cos(barrelAngle), Math.sin(barrelAngle));
-              spawnPos = spawnPos.add(bForward.mult(barrel.length));
-            } else {
-              const bForward = new Vector(Math.cos(barrelAngle), Math.sin(barrelAngle));
-              spawnPos = spawnPos.add(bForward.mult(barrel.length));
+            let maxDrones = barrel.maxDrones || 8;
+            const isUnderseerClass = player.tankClass === TankClass.Underseer || 
+                                     player.tankClass === TankClass.AutoUnderseer ||
+                                     player.tankClass === TankClass.Necromancer ||
+                                     player.tankClass === TankClass.GreyGoo ||
+                                     player.tankClass === TankClass.Lich;
+            if (isUnderseerClass && !isCruiser) {
+              const reloadPoints = player.stats.reload || 0;
+              maxDrones = 8;
+              for (let r = 0; r < reloadPoints; r++) {
+                if (r < 7) maxDrones += 4;
+                else maxDrones += 2;
+              }
             }
+
+            if (currentCount >= maxDrones) {
+              canFireAtCap = false;
+            }
+          }
+
+          if (canFireAtCap) {
+            player.barrelTimers[i] += dt;
+            
+            if (player.barrelTimers[i] >= reloadTime) {
+              player.barrelTimers[i] -= reloadTime;
               
-            const vel = dir.mult(bulletSpeed);
-            
-            if (barrel.type === 'trap') {
-               const t = new Trap(spawnPos, vel, player.id, player.color, bulletDamage, bulletPenetration, bulletRadius * 1.5);
-               t.hasAutoTurret = barrel.hasAutoTurret || false;
-               t.missileType = barrel.missileType || MissileType.None;
-               this.traps.push(t);
-            } else if (barrel.type === 'drone' || barrel.type === 'cruiser_drone') {
-               const isCruiser = barrel.type === 'cruiser_drone';
-               const currentCount = isCruiser ? playerCruiserDroneCount : playerDroneCount;
-               if (currentCount < (barrel.maxDrones || 8)) {
-                  const dSpeed = isCruiser ? bulletSpeed * 0.66 : bulletSpeed * 0.33;
-                  const dRadius = isCruiser ? bulletRadius * 1.2 : bulletRadius * 1.8;
-                  const dPenetration = isCruiser ? 1 : bulletPenetration;
-                  const dDamage = isCruiser ? bulletDamage * 0.25 : bulletDamage;
-                  const d = new Drone(spawnPos, vel, player.id, player.color, dDamage, dPenetration, dRadius, dSpeed, isCruiser);
-                  d.hasAutoTurret = barrel.hasAutoTurret || false;
-                  d.missileType = barrel.missileType || MissileType.None;
-                  this.drones.push(d);
-                  if (isCruiser) playerCruiserDroneCount++;
-                  else playerDroneCount++;
-               }
-            } else {
-               const b = new Bullet(spawnPos, vel, player.id, bulletDamage, bulletPenetration, bulletRadius, player.color, player.tankClass === TankClass.Railgun);
-               b.hasAutoTurret = barrel.hasAutoTurret || false;
-               b.missileType = barrel.missileType || MissileType.None;
-               this.bullets.push(b);
+              const bulletSpeed = (400 + getEffectiveStat(player.stats.bulletSpeed) * 40) * barrel.speedMult;
+              const bulletDamage = (750 + getEffectiveStat(player.stats.bulletDamage) * 150) * barrel.damageMult * Math.pow((bulletSpeed / 400),1.5);
+              const bulletPenetration = (0.2 + getEffectiveStat(player.stats.bulletPenetration) * 0.05) * barrel.penMult;
+              const bulletRadius = 8 * (barrel.bulletSizeMult || 1);
+              
+              const angle = barrelAngle + (Math.random() - 0.5) * barrel.spread;
+              const dir = new Vector(Math.cos(angle), Math.sin(angle));
+              
+              if (barrel.autoAim) {
+                const bForward = new Vector(Math.cos(barrelAngle), Math.sin(barrelAngle));
+                spawnPos = spawnPos.add(bForward.mult(barrel.length));
+              } else {
+                const bForward = new Vector(Math.cos(barrelAngle), Math.sin(barrelAngle));
+                spawnPos = spawnPos.add(bForward.mult(barrel.length));
+              }
+                
+              const vel = dir.mult(bulletSpeed);
+              
+              if (barrel.type === 'trap') {
+                 const t = new Trap(spawnPos, vel, player.id, player.color, bulletDamage, bulletPenetration, bulletRadius * 1.5, player.tankClass);
+                 t.hasAutoTurret = barrel.hasAutoTurret || false;
+                 t.missileType = barrel.missileType || MissileType.None;
+                 this.traps.push(t);
+              } else if (barrel.type === 'drone' || barrel.type === 'cruiser_drone') {
+                 const isCruiser = barrel.type === 'cruiser_drone';
+                 const dSpeed = isCruiser ? bulletSpeed * 0.66 : bulletSpeed * 0.33;
+                 const dRadius = isCruiser ? bulletRadius * 1.2 : bulletRadius * 1.8;
+                 const dPenetration = isCruiser ? 1 : bulletPenetration;
+                 const dDamage = isCruiser ? bulletDamage * 0.25 : bulletDamage;
+                 const d = new Drone(spawnPos, vel, player.id, player.color, dDamage, dPenetration, dRadius, dSpeed, isCruiser, player.tankClass);
+                 d.hasAutoTurret = barrel.hasAutoTurret || false;
+                 d.missileType = barrel.missileType || MissileType.None;
+                 this.drones.push(d);
+                 if (isCruiser) playerCruiserDroneCount++;
+                 else playerDroneCount++;
+              } else {
+                 const b = new Bullet(spawnPos, vel, player.id, bulletDamage, bulletPenetration, bulletRadius, player.color, player.tankClass === TankClass.Railgun, player.tankClass);
+                 b.hasAutoTurret = barrel.hasAutoTurret || false;
+                 b.missileType = barrel.missileType || MissileType.None;
+                 this.bullets.push(b);
+              }
+              
+              const recoil = barrel.recoilMult !== undefined ? barrel.recoilMult : barrel.damageMult;
+              player.vel = player.vel.sub(dir.mult(20 * recoil));
             }
-            
-            const recoil = barrel.recoilMult !== undefined ? barrel.recoilMult : barrel.damageMult;
-            player.vel = player.vel.sub(dir.mult(20 * recoil));
+          } else {
+            // At cap, just keep timer at targetTime (ready to fire)
+            const targetTime = reloadTime * (1 - barrel.delay);
+            if (player.barrelTimers[i] < targetTime) {
+              player.barrelTimers[i] += dt;
+              if (player.barrelTimers[i] > targetTime) player.barrelTimers[i] = targetTime;
+            }
           }
         } else {
           const reloadTime = baseReloadTime * barrel.reloadMult;
@@ -1412,6 +1454,9 @@ export class Game {
       player.update(dt);
       if (player.dead) {
         console.log('Player dead, calling onPlayerDeath', playerId);
+        if (playerId === this.myPlayerId) {
+          this.killerId = player.lastDamagedBy;
+        }
         if (this.isServer && this.onPlayerDeath) this.onPlayerDeath(playerId, player.lastDamagedBy);
         for (const d of this.drones) {
           if (d.ownerId === player.id) d.dead = true;
@@ -1453,6 +1498,7 @@ export class Game {
     // Update traps
     for (let i = this.traps.length - 1; i >= 0; i--) {
       const t = this.traps[i];
+
       t.update(dt);
       this.tickEntityWeapons(t, dt);
       this.applySoftBorder(t, dt);
@@ -1559,19 +1605,20 @@ export class Game {
       e.tick(dt, this.enemyTargets, (type, pos, vel, stats, barrel) => {
         const bulletRadius = 8 * (barrel.bulletSizeMult || 1);
         if (type === 'trap') {
-          const t = new Trap(pos, vel, e.id, e.color, stats.bulletDamage, stats.bulletPen, bulletRadius * 1.5);
+          const t = new Trap(pos, vel, e.id, e.color, stats.bulletDamage, stats.bulletPen, bulletRadius * 1.5, e.tankClass);
           t.hasAutoTurret = barrel.hasAutoTurret || false;
           t.missileType = barrel.missileType || MissileType.None;
           this.traps.push(t);
         } else if (type === 'drone' || type === 'cruiser_drone') {
           const isCruiser = type === 'cruiser_drone';
           const dRadius = isCruiser ? bulletRadius * 1.2 : bulletRadius * 1.8;
-          const d = new Drone(pos, vel, e.id, e.color, stats.bulletDamage, stats.bulletPen, dRadius, stats.bulletSpeed * (isCruiser ? 0.66 : 0.33), isCruiser);
+          const dSpeed = stats.bulletSpeed * (isCruiser ? 0.66 : 0.33);
+          const d = new Drone(pos, vel, e.id, e.color, stats.bulletDamage, stats.bulletPen, dRadius, dSpeed, isCruiser, e.tankClass);
           d.hasAutoTurret = barrel.hasAutoTurret || false;
           d.missileType = barrel.missileType || MissileType.None;
           this.drones.push(d);
         } else {
-          const b = new Bullet(pos, vel, e.id, stats.bulletDamage, stats.bulletPen, bulletRadius, e.color, e.tankClass === TankClass.Railgun);
+          const b = new Bullet(pos, vel, e.id, stats.bulletDamage, stats.bulletPen, bulletRadius, e.color, e.tankClass === TankClass.Railgun, e.tankClass);
           b.hasAutoTurret = barrel.hasAutoTurret || false;
           b.missileType = barrel.missileType || MissileType.None;
           this.bullets.push(b);
@@ -1615,6 +1662,18 @@ export class Game {
       } else {
         this.camera.x += (this.player.pos.x - this.camera.x) * 10 * dt;
         this.camera.y += (this.player.pos.y - this.camera.y) * 10 * dt;
+      }
+    } else if (this.killerId) {
+      const killer = this.players.get(this.killerId) || 
+                     this.enemies.find(e => e.id === this.killerId) || 
+                     this.crashers.find(c => c.id === this.killerId) || 
+                     this.shapes.find(s => s.id === this.killerId) ||
+                     this.bullets.find(b => b.id === this.killerId) ||
+                     this.traps.find(t => t.id === this.killerId) ||
+                     this.drones.find(d => d.id === this.killerId);
+      if (killer) {
+        this.camera.x += (killer.pos.x - this.camera.x) * 10 * dt;
+        this.camera.y += (killer.pos.y - this.camera.y) * 10 * dt;
       }
     }
     
@@ -1703,6 +1762,51 @@ export class Game {
     for (const c of this.crashers) this.grid.insert(c);
     for (const e of this.enemies) this.grid.insert(e);
 
+    // Shape vs Shape (Rock) collisions
+    for (let i = 0; i < this.shapes.length; i++) {
+      const s1 = this.shapes[i];
+      if (s1.dead) continue;
+      const nearby = this.grid.getNearby(s1.pos.x, s1.pos.y, s1.radius + 150);
+      for (const s2 of nearby) {
+        if (s2 === s1 || s2.dead || !(s2 instanceof Shape)) continue;
+        if (s1.shapeType !== ShapeType.ROCK && s2.shapeType !== ShapeType.ROCK) continue;
+        
+        const dist = s1.pos.dist(s2.pos);
+        const minDist = s1.radius + s2.radius;
+        if (dist < minDist && dist > 0) {
+          const overlap = minDist - dist;
+          const dir = s1.pos.sub(s2.pos).normalize();
+          if (s1.shapeType === ShapeType.ROCK && s2.shapeType !== ShapeType.ROCK) {
+            s2.pos = s2.pos.sub(dir.mult(overlap));
+            s2.vel = s2.vel.sub(dir.mult(100 * dt));
+          } else if (s1.shapeType !== ShapeType.ROCK && s2.shapeType === ShapeType.ROCK) {
+            s1.pos = s1.pos.add(dir.mult(overlap));
+            s1.vel = s1.vel.add(dir.mult(100 * dt));
+          }
+        }
+      }
+    }
+
+    // Projectile vs Projectile collisions
+    const projectiles = [...this.bullets, ...this.traps, ...this.drones];
+    for (let i = 0; i < projectiles.length; i++) {
+      const p1 = projectiles[i];
+      if (p1.dead) continue;
+      const nearby = this.grid.getNearby(p1.pos.x, p1.pos.y, p1.radius + 150);
+      for (const p2 of nearby) {
+        if (p2.dead || p2 === p1) continue;
+        if ((p1 as any).ownerId === (p2 as any).ownerId) continue;
+        
+        if ((p2 instanceof Bullet || p2 instanceof Trap || p2 instanceof Drone) && p1.pos.dist(p2.pos) < p1.radius + p2.radius) {
+          p1.isDamaging = true;
+          const divisor = p1 instanceof Trap ? 375 : 750;
+          let damageToDeal = p1.damage;
+          if (p1 instanceof Bullet && p1.ownerClass === TankClass.Excavator) damageToDeal *= 0.75;
+          p2.penetration -= (damageToDeal / divisor) * dt;
+        }
+      }
+    }
+
     // Bullet collisions
     for (const b of this.bullets) {
       if (b.dead) continue;
@@ -1714,13 +1818,19 @@ export class Game {
           const s = other;
           if (b.pos.dist(s.pos) < b.radius + s.radius) {
             b.isDamaging = true;
-            s.takeDamage(b.damage * dt);
+            let damageToDeal = b.damage * dt;
+            if (b.ownerClass === TankClass.Excavator) {
+              damageToDeal *= (10 / 0.75); // 10x damage to shapes, compensating for the 0.75x base multiplier
+            }
+            s.takeDamage(damageToDeal, b.ownerId);
             
             if (s.shapeType === ShapeType.ROCK) {
-              const normal = b.pos.sub(s.pos).normalize();
-              const dot = b.vel.dot(normal);
-              if (dot < 0) {
-                b.vel = b.vel.sub(normal.mult(2 * dot)).mult(0.8);
+              if (b.ownerClass !== TankClass.Excavator) {
+                const normal = b.pos.sub(s.pos).normalize();
+                const dot = b.vel.dot(normal);
+                if (dot < 0) {
+                  b.vel = b.vel.sub(normal.mult(2 * dot)).mult(0.8);
+                }
               }
             } else {
               const dir = s.pos.sub(b.pos).normalize();
@@ -1733,34 +1843,39 @@ export class Game {
           const c = other;
           if (b.pos.dist(c.pos) < b.radius + c.radius) {
             b.isDamaging = true;
-            c.takeDamage(b.damage * dt);
+            let damageToDeal = b.damage * dt;
+            if (b.ownerClass === TankClass.Excavator) damageToDeal *= 0.75;
+            c.takeDamage(damageToDeal, b.ownerId);
             if (c.dead) this.giveXp(b.ownerId, 15);
           }
         } else if (other instanceof EnemyTank) {
           const e = other;
           if (b.ownerId !== e.id && b.pos.dist(e.pos) < b.radius + e.radius) {
             b.isDamaging = true;
-            e.takeDamage(b.damage * dt);
-            if (e.dead) this.giveXp(b.ownerId, e.level * 50);
+            if (b.isRailgun) {
+              e.takeDamage(e.maxHealth, b.ownerId);
+            } else {
+              let damageToDeal = b.damage * dt;
+              if (b.ownerClass === TankClass.Excavator) damageToDeal *= 0.75;
+              e.takeDamage(damageToDeal, b.ownerId);
+            }
+            if (e.dead) {
+              const totalScore = calculateTotalXp(e.level, e.xp);
+              const xpReward = Math.floor(Math.pow(Math.sqrt(totalScore), 1.7));
+              this.giveXp(b.ownerId, xpReward);
+            }
           }
         } else if (other instanceof Player) {
           const p = other;
           if (!p.isInvincible && b.ownerId !== p.id && b.pos.dist(p.pos) < b.radius + p.radius) {
             b.isDamaging = true;
-            p.takeDamage(b.damage * dt);
-          }
-        } else if (other instanceof Drone) {
-          const d = other;
-          if (b.ownerId !== d.ownerId && b.pos.dist(d.pos) < b.radius + d.radius) {
-            b.isDamaging = true;
-            d.penetration -= b.damage * dt * 0.1;
-          }
-        } else if (other instanceof Trap) {
-          const t = other;
-          if (b.ownerId !== t.ownerId && b.pos.dist(t.pos) < b.radius + t.radius) {
-            b.penetration -= t.damage * dt * 0.5;
-            t.penetration -= b.damage * dt * 0.01;
-            b.isDamaging = true;
+            if (b.isRailgun) {
+              p.takeDamage(p.maxHealth, b.ownerId);
+            } else {
+              let damageToDeal = b.damage * dt;
+              if (b.ownerClass === TankClass.Excavator) damageToDeal *= 0.75;
+              p.takeDamage(damageToDeal, b.ownerId);
+            }
           }
         }
       }
@@ -1777,7 +1892,7 @@ export class Game {
           const s = other;
           if (t.pos.dist(s.pos) < t.radius + s.radius) {
             t.isDamaging = true;
-            s.takeDamage(t.damage * dt);
+            s.takeDamage(t.damage * dt, t.ownerId);
             
             if (s.shapeType === ShapeType.ROCK) {
               const normal = t.pos.sub(s.pos).normalize();
@@ -1796,7 +1911,7 @@ export class Game {
           const c = other;
           if (t.pos.dist(c.pos) < t.radius + c.radius) {
             t.isDamaging = true;
-            c.takeDamage(t.damage * dt);
+            c.takeDamage(t.damage * dt, t.ownerId);
             const dir = c.pos.sub(t.pos).normalize();
             c.vel = c.vel.add(dir.mult(100 * dt));
             if (c.dead) this.giveXp(t.ownerId, 15);
@@ -1805,16 +1920,20 @@ export class Game {
           const e = other;
           if (t.ownerId !== e.id && t.pos.dist(e.pos) < t.radius + e.radius) {
             t.isDamaging = true;
-            e.takeDamage(t.damage * dt);
+            e.takeDamage(t.damage * dt, t.ownerId);
             const dir = e.pos.sub(t.pos).normalize();
             e.vel = e.vel.add(dir.mult(100 * dt));
-            if (e.dead) this.giveXp(t.ownerId, e.level * 50);
+            if (e.dead) {
+              const totalScore = calculateTotalXp(e.level, e.xp);
+              const xpReward = Math.floor(Math.pow(Math.sqrt(totalScore), 1.7));
+              this.giveXp(t.ownerId, xpReward);
+            }
           }
         } else if (other instanceof Player) {
           const p = other;
           if (!p.isInvincible && t.ownerId !== p.id && t.pos.dist(p.pos) < t.radius + p.radius) {
             t.isDamaging = true;
-            p.takeDamage(t.damage * dt);
+            p.takeDamage(t.damage * dt, t.ownerId);
             const dist = t.pos.dist(p.pos);
             const minDist = t.radius + p.radius;
             const overlap = minDist - dist;
@@ -1830,7 +1949,6 @@ export class Game {
           const d = other;
           if (t.ownerId !== d.ownerId && t.pos.dist(d.pos) < t.radius + d.radius) {
             t.isDamaging = true;
-            d.penetration -= t.damage * dt * 0.1;
             const dist = t.pos.dist(d.pos);
             const minDist = t.radius + d.radius;
             const overlap = minDist - dist;
@@ -1852,9 +1970,6 @@ export class Game {
             
             t.pos = t.pos.sub(dir.mult(overlap * 0.5));
             t2.pos = t2.pos.add(dir.mult(overlap * 0.5));
-
-            t.penetration -= 5 * dt;
-            t2.penetration -= 5 * dt;
             
             const relVel = t.vel.sub(t2.vel);
             const speed = relVel.dot(dir);
@@ -1879,8 +1994,57 @@ export class Game {
         if (other instanceof Shape) {
           const s = other;
           if (d.pos.dist(s.pos) < d.radius + s.radius) {
+            // Underseer logic: turn squares into drones
+            const isUnderseerClass = d.ownerClass === TankClass.Underseer || 
+                                     d.ownerClass === TankClass.AutoUnderseer ||
+                                     d.ownerClass === TankClass.Necromancer ||
+                                     d.ownerClass === TankClass.GreyGoo ||
+                                     d.ownerClass === TankClass.Lich;
+            
+            if (isUnderseerClass && s.shapeType === ShapeType.SQUARE && !s.dead) {
+              // Check drone cap
+              let owner: Player | EnemyTank | undefined;
+              if (this.players.has(d.ownerId)) {
+                owner = this.players.get(d.ownerId);
+              } else {
+                owner = this.enemies.find(e => e.id === d.ownerId);
+              }
+
+              if (owner) {
+                const currentDroneCount = this.drones.filter(dr => dr.ownerId === d.ownerId && !dr.isCruiser).length;
+                
+                // Calculate max drones
+                let maxDrones = 8;
+                const reloadPoints = owner.stats.reload || 0;
+                for (let r = 0; r < reloadPoints; r++) {
+                  if (r < 7) maxDrones += 4;
+                  else maxDrones += 2;
+                }
+                
+                if (currentDroneCount < maxDrones) {
+                  s.dead = true;
+                  const drone = new Drone(
+                    s.pos.copy(),
+                    new Vector(Math.random() - 0.5, Math.random() - 0.5).normalize().mult(50),
+                    d.ownerId,
+                    d.color,
+                    d.damage,
+                    d.penetration,
+                    15,
+                    200,
+                    false,
+                    d.ownerClass,
+                    MissileType.UnderseerDrone
+                  );
+                  this.drones.push(drone);
+                  this.giveXp(d.ownerId, s.xpValue);
+                  continue; // Skip normal damage logic
+                }
+              }
+            }
+
             d.isDamaging = true;
-            s.takeDamage(d.damage * dt);
+            s.takeDamage(d.damage * dt, d.ownerId);
             
             const dist = d.pos.dist(s.pos);
             const minDist = d.radius + s.radius;
@@ -1901,7 +2065,7 @@ export class Game {
           const c = other;
           if (d.pos.dist(c.pos) < d.radius + c.radius) {
             d.isDamaging = true;
-            c.takeDamage(d.damage * dt);
+            c.takeDamage(d.damage * dt, d.ownerId);
             const dir = c.pos.sub(d.pos).normalize();
             c.vel = c.vel.add(dir.mult(100 * dt));
             d.vel = d.vel.sub(dir.mult(100 * dt));
@@ -1911,17 +2075,21 @@ export class Game {
           const e = other;
           if (d.ownerId !== e.id && d.pos.dist(e.pos) < d.radius + e.radius) {
             d.isDamaging = true;
-            e.takeDamage(d.damage * dt);
+            e.takeDamage(d.damage * dt, d.ownerId);
             const dir = e.pos.sub(d.pos).normalize();
             e.vel = e.vel.add(dir.mult(100 * dt));
             d.vel = d.vel.sub(dir.mult(100 * dt));
-            if (e.dead) this.giveXp(d.ownerId, e.level * 50);
+            if (e.dead) {
+              const totalScore = calculateTotalXp(e.level, e.xp);
+              const xpReward = Math.floor(Math.pow(Math.sqrt(totalScore), 1.7));
+              this.giveXp(d.ownerId, xpReward);
+            }
           }
         } else if (other instanceof Player) {
           const p = other;
           if (!p.isInvincible && d.ownerId !== p.id && d.pos.dist(p.pos) < d.radius + p.radius) {
             d.isDamaging = true;
-            p.takeDamage(d.damage * dt);
+            p.takeDamage(d.damage * dt, d.ownerId);
             const dir = p.pos.sub(d.pos).normalize();
             p.vel = p.vel.add(dir.mult(100 * dt));
             d.vel = d.vel.sub(dir.mult(100 * dt));
@@ -1947,7 +2115,7 @@ export class Game {
     // Player collisions
     for (const p of this.players.values()) {
       if (p.dead) continue;
-      const bodyDamage = 400 + p.stats.bodyDamage * 200;
+      const bodyDamage = 400 + getEffectiveStat(p.stats.bodyDamage) * 200;
       const nearby = this.grid.getNearby(p.pos.x, p.pos.y, p.radius + 150);
       for (const other of nearby) {
         if (other.dead || other === p) continue;
@@ -1955,8 +2123,8 @@ export class Game {
         if (other instanceof Shape) {
           const s = other;
           if (!p.isInvincible && p.pos.dist(s.pos) < p.radius + s.radius) {
-            s.takeDamage(bodyDamage * dt);
-            p.takeDamage(s.damage * dt);
+            s.takeDamage(bodyDamage * dt, p.id);
+            p.takeDamage(s.damage * dt, s.id);
             
             const dist = p.pos.dist(s.pos);
             const minDist = p.radius + s.radius;
@@ -1976,8 +2144,8 @@ export class Game {
         } else if (other instanceof Crasher) {
           const c = other;
           if (!p.isInvincible && p.pos.dist(c.pos) < p.radius + c.radius) {
-            c.takeDamage(bodyDamage * dt);
-            p.takeDamage(c.damage * dt);
+            c.takeDamage(bodyDamage * dt, p.id);
+            p.takeDamage(c.damage * dt, c.id);
             const dir = p.pos.sub(c.pos).normalize();
             p.vel = p.vel.add(dir.mult(200 * dt));
             c.vel = c.vel.sub(dir.mult(200 * dt));
@@ -2024,8 +2192,8 @@ export class Game {
         if (other instanceof Shape) {
           const s = other;
           if (e.pos.dist(s.pos) < e.radius + s.radius) {
-            s.takeDamage(100 * dt);
-            e.takeDamage(s.damage * dt);
+            s.takeDamage(100 * dt, e.id);
+            e.takeDamage(s.damage * dt, s.id);
 
             const dist = e.pos.dist(s.pos);
             const minDist = e.radius + s.radius;
@@ -2047,15 +2215,23 @@ export class Game {
           if (e.pos.dist(otherE.pos) < e.radius + otherE.radius) {
             const bodyDamageE = 400 + e.stats.bodyDamage * 200;
             const bodyDamageOther = 400 + otherE.stats.bodyDamage * 200;
-            otherE.takeDamage(bodyDamageE * dt);
-            e.takeDamage(bodyDamageOther * dt);
+            otherE.takeDamage(bodyDamageE * dt, e.id);
+            e.takeDamage(bodyDamageOther * dt, otherE.id);
             
             const dir = e.pos.sub(otherE.pos).normalize();
             e.vel = e.vel.add(dir.mult(150 * dt));
             otherE.vel = otherE.vel.sub(dir.mult(150 * dt));
             
-            if (otherE.dead) e.gainXp(otherE.level * 50);
-            if (e.dead) otherE.gainXp(e.level * 50);
+            if (otherE.dead) {
+              const totalScore = calculateTotalXp(otherE.level, otherE.xp);
+              const xpReward = Math.floor(Math.pow(Math.sqrt(totalScore), 1.7));
+              e.gainXp(xpReward);
+            }
+            if (e.dead) {
+              const totalScore = calculateTotalXp(e.level, e.xp);
+              const xpReward = Math.floor(Math.pow(Math.sqrt(totalScore), 1.7));
+              otherE.gainXp(xpReward);
+            }
           }
         }
       }
@@ -2103,7 +2279,7 @@ export class Game {
     
     // Update camera to follow target if set
     if (this.cameraTargetId !== null) {
-      const target = this.players.get(this.cameraTargetId) || this.enemyMap.get(this.cameraTargetId) || this.crasherMap.get(this.cameraTargetId);
+      const target = this.players.get(this.cameraTargetId) || this.enemyMap.get(this.cameraTargetId) || this.crasherMap.get(this.cameraTargetId) || this.shapeMap.get(this.cameraTargetId);
       if (target) {
         this.camera = target.renderPos.copy();
       }
@@ -2345,7 +2521,8 @@ export class Game {
       this.ws.send(writer.getBuffer());
       return;
     }
-    if (this.player && this.player.skillPoints > 0 && this.player.stats[stat] < 7) {
+    const maxStat = this.player && this.player.level >= 80 ? 14 : 7;
+    if (this.player && this.player.skillPoints > 0 && this.player.stats[stat] < maxStat) {
       this.player.stats[stat]++;
       this.player.skillPoints--;
       if (stat === 'maxHealth') {

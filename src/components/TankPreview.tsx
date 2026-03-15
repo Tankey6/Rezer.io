@@ -82,8 +82,22 @@ export function TankPreview({ tankClass, size = 64 }: TankPreviewProps) {
       }
 
       // Draw body
+      const isSquareBody = tankClass === TankClass.Underseer || 
+                           tankClass === TankClass.AutoUnderseer ||
+                           tankClass === TankClass.Necromancer ||
+                           tankClass === TankClass.GreyGoo ||
+                           tankClass === TankClass.Lich ||
+                           tankClass === TankClass.Pythonist;
       ctx.beginPath();
-      ctx.arc(0, 0, 20, 0, Math.PI * 2);
+      if (isSquareBody) {
+        ctx.moveTo(-20, -20);
+        ctx.lineTo(20, -20);
+        ctx.lineTo(20, 20);
+        ctx.lineTo(-20, 20);
+        ctx.closePath();
+      } else {
+        ctx.arc(0, 0, 20, 0, Math.PI * 2);
+      }
       ctx.fillStyle = color;
       ctx.fill();
       ctx.strokeStyle = outlineColor;

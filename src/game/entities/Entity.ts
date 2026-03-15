@@ -51,10 +51,15 @@ export abstract class Entity {
     const s1 = this.stateBuffer[i + 1];
     const t = (serverTime - s0.timestamp) / (s1.timestamp - s0.timestamp);
     
-    this.renderPos = new Vector(
+    const targetPos = new Vector(
       s0.pos.x + (s1.pos.x - s0.pos.x) * t,
       s0.pos.y + (s1.pos.y - s0.pos.y) * t
     );
+    
+    // Hitbox-Biased Smoothing
+    const dist = this.renderPos.dist(targetPos);
+    const bias = Math.min(1, dist / Math.max(1, this.radius * 0.5));
+    this.renderPos = this.renderPos.lerp(targetPos, Math.max(0.2, bias));
     
     // Interpolate angle
     let angleDiff = s1.angle - s0.angle;

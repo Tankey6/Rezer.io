@@ -14,15 +14,20 @@ async function startServer() {
   });
 
   // Start WebSocket server using the same HTTP server
-  setupMultiplayer(server);
+  try {
+    setupMultiplayer(server);
+  } catch (error) {
+    console.error('Failed to setup multiplayer:', error);
+  }
 
   // API routes FIRST
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
   });
   setInterval(() => {
-    fetch('/api/health').catch(() => {}); // Minimal impact "poke"
-}, 30000);
+    fetch('http://localhost:3000/api/health').catch(() => {}); // Minimal impact "poke"
+  }, 30000);
+  
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
