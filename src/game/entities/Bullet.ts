@@ -20,18 +20,49 @@ export class Bullet extends Entity {
   autoAngle: number = 0;
   reloadTimers: number[] = [];
   angle: number = 0;
+  spin: number = 0;
+  spinAngle: number = 0;
 
   ownerClass: TankClass = TankClass.Basic;
+  poolIndex: number = -1;
 
   constructor(pos: Vector, vel: Vector, ownerId: number, damage: number, penetration: number, radius: number = 8, color: string = '#00b2e1', isRailgun: boolean = false, ownerClass: TankClass = TankClass.Basic) {
     super(pos, radius, color, EntityType.BULLET, 1);
-    this.vel = vel;
+    this.init(pos, vel, ownerId, damage, penetration, radius, color, isRailgun, ownerClass);
+  }
+
+  init(pos: Vector, vel: Vector, ownerId: number, damage: number, penetration: number, radius: number = 8, color: string = '#00b2e1', isRailgun: boolean = false, ownerClass: TankClass = TankClass.Basic) {
+    this.dead = true;
+    this.id = Entity.nextEntityId++;
+    this.pos = pos.copy();
+    this.renderPos = pos.copy();
+    this.vel = vel.copy();
     this.ownerId = ownerId;
     this.damage = damage;
     this.penetration = penetration;
+    this.radius = radius;
+    this.color = color;
     this.isRailgun = isRailgun;
     this.ownerClass = ownerClass;
     this.angle = Math.atan2(vel.y, vel.x);
+    
+    this.age = 0;
+    this.deadTimer = 0;
+    this.trail = [];
+    this.isDamaging = false;
+    this.hasAutoTurret = false;
+    this.missileType = MissileType.None;
+    this.autoAngle = 0;
+    this.reloadTimers = [];
+    this.spin = 0;
+    this.spinAngle = 0;
+    this.health = 1;
+    this.maxHealth = 1;
+    this.stateBuffer = [];
+    this.visibility = 1;
+    this.isInvisible = false;
+    this.lastDamagedBy = null;
+    this.dead = false;
   }
 
   update(dt: number) {
@@ -44,6 +75,7 @@ export class Bullet extends Entity {
     
     super.update(dt);
     this.angle = Math.atan2(this.vel.y, this.vel.x);
+    this.spinAngle += this.spin * dt;
     this.age += dt;
     
     if (!this.isRailgun && this.isDamaging) {
@@ -68,6 +100,7 @@ export class Bullet extends Entity {
   }
 
   draw(ctx: CanvasRenderingContext2D) {
+    if (this.visibility <= 0) return;
     if (this.isRailgun) {
       const now = performance.now();
       if (!this.dead) {
@@ -120,7 +153,7 @@ export class Bullet extends Entity {
         if (barrel.autoAim) continue;
         
         ctx.save();
-        ctx.rotate(this.angle + barrel.angleOffset);
+        ctx.rotate(this.angle + this.spinAngle + barrel.angleOffset);
         ctx.translate(barrel.xOffset, barrel.yOffset);
         
         if (barrel.widthEnd !== undefined && barrel.length > 0) {
@@ -166,7 +199,7 @@ export class Bullet extends Entity {
         }
 
         ctx.save();
-        ctx.rotate(this.autoAngle + barrel.angleOffset);
+        ctx.rotate(this.autoAngle + this.spinAngle + barrel.angleOffset);
         ctx.translate(barrel.xOffset, barrel.yOffset);
         
         if (barrel.widthEnd !== undefined && barrel.length > 0) {
@@ -215,5 +248,62 @@ export class Bullet extends Entity {
     ctx.lineWidth = 2;
     ctx.stroke();
     ctx.restore();
+  }
+}
+
+export class BulletPool {
+  private deadStack: Bullet[] = [];
+  private activeBullets: Bullet[] = [];
+
+  constructor(initialSize: number = 50) {
+    this.allocateBatch(initialSize);
+  }
+
+  private allocateBatch(size: number) {
+    for (let i = 0; i < size; i++) {
+      const bullet = new Bullet(new Vector(0, 0), new Vector(0, 0), -1, 0, 0);
+      bullet.dead = true;
+      this.deadStack.push(bullet);
+    }
+  }
+
+  spawn(pos: Vector, vel: Vector, ownerId: number, damage: number, penetration: number, radius: number = 8, color: string = '#00b2e1', isRailgun: boolean = false, ownerClass: TankClass = TankClass.Basic): Bullet {
+    if (this.deadStack.length === 0) {
+      this.allocateBatch(50);
+    }
+    const bullet = this.deadStack.pop()!;
+    bullet.init(pos, vel, ownerId, damage, penetration, radius, color, isRailgun, ownerClass);
+    bullet.poolIndex = this.activeBullets.length;
+    this.activeBullets.push(bullet);
+    return bullet;
+  }
+
+  despawn(index: number) {
+    if (index < 0 || index >= this.activeBullets.length) return;
+    const bullet = this.activeBullets[index];
+    bullet.dead = true;
+    
+    // Swap-and-Pop
+    const lastIdx = this.activeBullets.length - 1;
+    if (index !== lastIdx) {
+      const lastBullet = this.activeBullets[lastIdx];
+      this.activeBullets[index] = lastBullet;
+      lastBullet.poolIndex = index;
+    }
+    this.activeBullets.pop();
+    bullet.poolIndex = -1;
+    this.deadStack.push(bullet);
+  }
+
+  get active(): Bullet[] {
+    return this.activeBullets;
+  }
+
+  clear() {
+    while (this.activeBullets.length > 0) {
+      const bullet = this.activeBullets.pop()!;
+      bullet.dead = true;
+      this.deadStack.push(bullet);
+    }
   }
 }

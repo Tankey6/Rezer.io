@@ -67,6 +67,7 @@ export class Shape extends Entity {
   }
 
   draw(ctx: CanvasRenderingContext2D) {
+    if (this.visibility <= 0) return;
     ctx.save();
     ctx.translate(this.renderPos.x, this.renderPos.y);
     ctx.rotate(this.angle);

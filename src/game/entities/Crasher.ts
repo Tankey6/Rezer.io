@@ -15,24 +15,24 @@ export class Crasher extends Entity {
     let health = 120;
     let color = '#f177dd';
     let speed = 180;
-    let damage = 80;
+    let damage = 40;
 
     if (crasherType === CrasherType.MEDIUM) {
       radius = 20;
       health = 300;
       speed = 150;
-      damage = 120;
+      damage = 60;
     } else if (crasherType === CrasherType.LARGE) {
       radius = 35;
       health = 600;
       speed = 120;
-      damage = 200;
+      damage = 100;
     } else if (crasherType === CrasherType.LIGHTNING) {
       radius = 15;
       health = 250;
       color = '#fcf771'
       speed = 250;
-      damage = 800;
+      damage = 80;
     }
 
     super(pos, radius, color, EntityType.CRASHER, health);
@@ -70,6 +70,7 @@ export class Crasher extends Entity {
   }
 
   draw(ctx: CanvasRenderingContext2D) {
+    if (this.visibility <= 0) return;
     ctx.save();
     ctx.translate(this.renderPos.x, this.renderPos.y);
     ctx.rotate(this.angle);

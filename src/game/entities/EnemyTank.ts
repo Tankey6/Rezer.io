@@ -1,6 +1,6 @@
 import { Entity } from './Entity.ts';
 import { Vector } from '../Vector.ts';
-import { EntityType, TankClass, BarrelDef, ShapeType, getEffectiveStat } from '../types.ts';
+import { EntityType, TankClass, BarrelDef, ShapeType, getEffectiveStat, AiDifficulty } from '../types.ts';
 import { TANK_CLASSES, UPGRADE_PATHS } from '../tankClasses.ts';
 import { darkenColor } from '../utils.ts';
 import { Bullet } from './Bullet.ts';
@@ -15,7 +15,8 @@ const AI_NAMES = [
 ];
 
 export class EnemyTank extends Entity {
-  name: string = AI_NAMES[Math.floor(Math.random() * AI_NAMES.length)] + ' (AI)';
+  difficulty: AiDifficulty;
+  name: string;
   tankClass: TankClass;
   angle: number = Math.random() * Math.PI * 2;
   targetAngle: number = 0;
@@ -38,10 +39,34 @@ export class EnemyTank extends Entity {
   target: Entity | null = null;
   wanderAngle: number = Math.random() * Math.PI * 2;
   wanderTime: number = 0;
+  
+  // Smart AI state
+  lastTargetPos: Vector | null = null;
+  targetVel: Vector = new Vector(0, 0);
+  aiTickTimer: number = 0;
 
-  constructor(pos: Vector, tankClass: TankClass, level: number) {
+  constructor(pos: Vector, tankClass: TankClass, level: number, difficulty?: AiDifficulty) {
     super(pos, 20, '#fc7677', EntityType.ENEMY_TANK, 300);
     this.tankClass = tankClass;
+    this.level = 1;
+    
+    if (difficulty !== undefined) {
+      this.difficulty = difficulty;
+    } else {
+      const rand = Math.random();
+      if (rand < 0.2) this.difficulty = AiDifficulty.DUMB;
+      else if (rand < 0.7) this.difficulty = AiDifficulty.NORMAL;
+      else this.difficulty = AiDifficulty.SMART;
+    }
+
+    const diffNames = {
+      [AiDifficulty.DUMB]: 'Dumb',
+      [AiDifficulty.NORMAL]: 'Normal',
+      [AiDifficulty.SMART]: 'Smart'
+    };
+    this.name = AI_NAMES[Math.floor(Math.random() * AI_NAMES.length)] + ` (${diffNames[this.difficulty]} AI)`;
+
+    this.updateRadius();
     
     const barrels = TANK_CLASSES[tankClass];
     const baseReloadTime = Math.max(0.05, Math.pow(0.9, getEffectiveStat(this.stats.reload)));
@@ -56,6 +81,12 @@ export class EnemyTank extends Entity {
       this.levelUp();
     }
     this.autoUpgradeClass();
+  }
+
+  updateRadius() {
+    const baseRadius = 20;
+    const level = Math.min(this.level, 45);
+    this.radius = baseRadius * (1 + (level - 1) * (0.25 / 44));
   }
 
   gainXp(amount: number) {
@@ -83,6 +114,7 @@ export class EnemyTank extends Entity {
     
     this.maxHealth += 15;
     this.health = this.maxHealth;
+    this.updateRadius();
     this.autoUpgradeClass();
   }
 
@@ -102,9 +134,45 @@ export class EnemyTank extends Entity {
     while (this.skillPoints > 0) {
       let upgraded = false;
       
+      const isSmasherBranch = [
+        'Smasher', 'AutoSmasher', 'Landmine', 'Spike'
+      ].includes(this.tankClass);
+      const maxStat = isSmasherBranch ? 10 : 7;
+
+      // Smart AI: Check if recoil is too high and upgrade movement speed
+      if (this.difficulty === AiDifficulty.SMART && this.skillPoints > 0) {
+        const barrels = TANK_CLASSES[this.tankClass];
+        let totalRecoil = 0;
+        const baseReloadTime = Math.max(0.05, Math.pow(0.9, getEffectiveStat(this.stats.reload)));
+        
+        for (const barrel of barrels) {
+          if (barrel.visualOnly || barrel.autoAim) continue;
+          const recoil = barrel.recoilMult !== undefined ? barrel.recoilMult : barrel.damageMult;
+          const reloadTime = baseReloadTime * barrel.reloadMult;
+          totalRecoil += (20 * recoil) / reloadTime;
+        }
+
+        const moveSpeed = 200 + getEffectiveStat(this.stats.movementSpeed) * 12;
+        // If recoil is more than 60% of move speed, prioritize move speed
+        if (totalRecoil > moveSpeed * 0.6 && this.stats.movementSpeed < maxStat) {
+          this.stats.movementSpeed++;
+          this.skillPoints--;
+          upgraded = true;
+          continue;
+        }
+      }
+      
       for (const group of [p1, p2, p3]) {
-        const maxStat = this.level >= 80 ? 14 : 7;
-        const available = group.filter(idx => this.stats[statKeys[idx]] < maxStat);
+        const available = group.filter(idx => {
+          const statKey = statKeys[idx];
+          // Smasher, Landmine, Spike don't have bullet stats
+          const isBulletStat = ['bulletSpeed', 'bulletPenetration', 'bulletDamage', 'reload'].includes(statKey);
+          if (isBulletStat && ['Smasher', 'Landmine', 'Spike'].includes(this.tankClass)) {
+            return false;
+          }
+          return this.stats[statKey] < maxStat;
+        });
+        
         if (available.length > 0) {
           const idx = available[Math.floor(Math.random() * available.length)];
           this.stats[statKeys[idx]]++;
@@ -130,8 +198,8 @@ export class EnemyTank extends Entity {
         TankClass.Gunner, TankClass.MachineTrapper, TankClass.GatlingGun,
         TankClass.Destroyer, TankClass.MegaTrapper, TankClass.Composition,
         TankClass.TriAngle, TankClass.Auto3, TankClass.TriTrapper, TankClass.TrapGuard,
-        TankClass.Overseer, TankClass.Underseer, TankClass.Cruiser, TankClass.Manager,
-        TankClass.Howitzer, TankClass.Launcher, TankClass.Spawner, TankClass.BigCheese
+        TankClass.Overseer, TankClass.Underseer, TankClass.Cruiser,
+        TankClass.Howitzer, TankClass.Launcher, TankClass.Spawner, TankClass.Minigun, TankClass.Smasher
       ];
       if (tier1.includes(tank)) return 15;
       if (tier2.includes(tank)) return 30;
@@ -141,6 +209,21 @@ export class EnemyTank extends Entity {
     const available = upgrades.filter(u => this.level >= getRequiredLevel(u));
     if (available.length > 0) {
       this.tankClass = available[Math.floor(Math.random() * available.length)];
+      
+      // Refund bullet stats for Smasher branch (except AutoSmasher)
+      if (['Smasher', 'Landmine', 'Spike'].includes(this.tankClass)) {
+        const bulletStats = ['bulletSpeed', 'bulletPenetration', 'bulletDamage', 'reload'] as const;
+        for (const stat of bulletStats) {
+          if (this.stats[stat] > 0) {
+            this.skillPoints += this.stats[stat];
+            this.stats[stat] = 0;
+          }
+        }
+        if (this.skillPoints > 0) {
+          this.autoUpgradeStats();
+        }
+      }
+      
       const barrels = TANK_CLASSES[this.tankClass];
       const baseReloadTime = Math.max(0.05, Math.pow(0.9, getEffectiveStat(this.stats.reload)));
       this.barrelAngles = barrels.map(b => this.angle + b.angleOffset);
@@ -176,24 +259,50 @@ export class EnemyTank extends Entity {
 
   tick(dt: number, entities: Entity[], spawn: (type: 'bullet' | 'trap' | 'drone' | 'cruiser_drone', pos: Vector, vel: Vector, stats: any, barrel: BarrelDef) => void, droneCount: number, cruiserDroneCount: number) {
     // AI: Threat-based Target Selection
-    let bestTarget = null;
-    let maxThreat = -1;
+    this.aiTickTimer -= dt;
+    if (this.aiTickTimer <= 0) {
+      // Dumb AI updates target less frequently
+      this.aiTickTimer = this.difficulty === AiDifficulty.DUMB ? 0.5 : (this.difficulty === AiDifficulty.NORMAL ? 0.1 : 0.05);
+      
+      let bestTarget = null;
+      let maxThreat = -1;
 
-    for (const e of entities) {
-      if (e === this || e.dead || e.id === this.id) continue;
-      const threat = this.calculateThreat(e);
-      if (threat > maxThreat) {
-        maxThreat = threat;
-        bestTarget = e;
+      for (const e of entities) {
+        if (e === this || e.dead || e.id === this.id) continue;
+        const threat = this.calculateThreat(e);
+        if (threat > maxThreat) {
+          maxThreat = threat;
+          bestTarget = e;
+        }
       }
-    }
 
-    this.target = bestTarget;
+      if (this.difficulty === AiDifficulty.SMART && bestTarget && this.target === bestTarget) {
+        // Track velocity for leading shots
+        if (this.lastTargetPos) {
+          this.targetVel = bestTarget.pos.sub(this.lastTargetPos).mult(1 / this.aiTickTimer);
+        }
+        this.lastTargetPos = bestTarget.pos.copy();
+      } else {
+        this.lastTargetPos = null;
+        this.targetVel = new Vector(0, 0);
+      }
+
+      this.target = bestTarget;
+    }
 
     if (this.target) {
       const dist = this.pos.dist(this.target.pos);
       const dir = this.target.pos.sub(this.pos).normalize();
-      this.targetAngle = Math.atan2(this.target.pos.y - this.pos.y, this.target.pos.x - this.pos.x);
+      
+      if (this.difficulty === AiDifficulty.SMART) {
+        // Leading shots
+        const bulletSpeed = (400 + getEffectiveStat(this.stats.bulletSpeed) * 60);
+        const timeToReach = dist / bulletSpeed;
+        const predictedPos = this.target.pos.add(this.targetVel.mult(timeToReach));
+        this.targetAngle = Math.atan2(predictedPos.y - this.pos.y, predictedPos.x - this.pos.x);
+      } else {
+        this.targetAngle = Math.atan2(this.target.pos.y - this.pos.y, this.target.pos.x - this.pos.x);
+      }
       
       // Class-based distance management
       let idealDist = 250;
@@ -214,16 +323,62 @@ export class EnemyTank extends Entity {
       }
 
       // Strafe
-      this.strafeTime -= dt;
-      if (this.strafeTime <= 0) {
-        this.strafeDir *= -1;
-        this.strafeTime = 1 + Math.random() * 2;
+      if (this.difficulty !== AiDifficulty.DUMB) {
+        this.strafeTime -= dt;
+        if (this.strafeTime <= 0) {
+          this.strafeDir *= -1;
+          this.strafeTime = 1 + Math.random() * 2;
+        }
+        const strafeVec = new Vector(-dir.y, dir.x).mult(this.strafeDir);
+        moveVec = moveVec.add(strafeVec.mult(0.8));
       }
-      const strafeVec = new Vector(-dir.y, dir.x).mult(this.strafeDir);
-      moveVec = moveVec.add(strafeVec.mult(0.8));
 
-      const speedMult = 100 + getEffectiveStat(this.stats.movementSpeed) * 10;
-      this.vel = this.vel.add(moveVec.normalize().mult(speedMult * 1.2 * dt)).limit(speedMult * 1.5);
+      // Smart AI: Dodging nearby bullets
+      if (this.difficulty === AiDifficulty.SMART) {
+        for (const e of entities) {
+          if (e.type === EntityType.SHAPE) {
+            const shapeDist = this.pos.dist(e.pos);
+            if (shapeDist < this.radius + e.radius + 100) {
+              const avoidDir = this.pos.sub(e.pos).normalize();
+              moveVec = moveVec.add(avoidDir.mult(2.0));
+            }
+          }
+          if (e instanceof Bullet && e.ownerId !== this.id) {
+            const bulletDist = this.pos.dist(e.pos);
+            if (bulletDist < 200) {
+              // Move perpendicular to bullet velocity
+              const dodgeDir = new Vector(-e.vel.y, e.vel.x).normalize();
+              // Choose side that moves away from bullet
+              const toBullet = e.pos.sub(this.pos);
+              if (dodgeDir.dot(toBullet) > 0) dodgeDir.mult(-1);
+              moveVec = moveVec.add(dodgeDir.mult(1.5));
+            }
+          }
+        }
+      }
+
+      let speedMult = 100 + getEffectiveStat(this.stats.movementSpeed) * 10;
+      if (['Smasher', 'AutoSmasher', 'Landmine', 'Spike'].includes(this.tankClass)) {
+        speedMult *= 1.15;
+      }
+      const actualSpeedMult = speedMult * Math.max(0.3, Math.pow(2, -0.01 * this.level));
+      
+      // Smart AI: Use recoil to move faster if moving away from target or needing boost
+      if (this.difficulty === AiDifficulty.SMART) {
+        const moveDir = moveVec.normalize();
+        const lookDir = new Vector(Math.cos(this.angle), Math.sin(this.angle));
+        
+        // If we want to move in a direction opposite to where we are looking, recoil helps!
+        // This is common for tanks like Booster or Destroyer
+        if (moveDir.dot(lookDir) < -0.5) {
+          // We are already looking away from where we want to go, so firing will push us there
+        } else if (moveDir.dot(lookDir) > 0.5 && dist < idealDist) {
+          // We are looking at target but want to move away, maybe we should turn around?
+          // For now, let's just let the normal recoil logic handle it if we are firing
+        }
+      }
+
+      this.vel = this.vel.add(moveVec.normalize().mult(actualSpeedMult * 1.2 * dt)).limit(actualSpeedMult * 1.5);
 
     } else {
       // Wander
@@ -240,7 +395,8 @@ export class EnemyTank extends Entity {
     // Smooth rotation
     const angleDiff = this.targetAngle - this.angle;
     const shortestDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff));
-    this.angle += shortestDiff * 5 * dt;
+    const rotationSpeed = this.difficulty === AiDifficulty.DUMB ? 2 : (this.difficulty === AiDifficulty.NORMAL ? 5 : 8);
+    this.angle += shortestDiff * rotationSpeed * dt;
 
     // Shooting logic
     const barrels = TANK_CLASSES[this.tankClass];
@@ -263,7 +419,7 @@ export class EnemyTank extends Entity {
           const angleToTarget = Math.atan2(target.pos.y - this.pos.y, target.pos.x - this.pos.x);
           const angleDiffFromBase = Math.atan2(Math.sin(angleToTarget - barrelBaseAngle), Math.cos(angleToTarget - barrelBaseAngle));
           
-          if (Math.abs(angleDiffFromBase) > Math.PI / 2) continue; // 180 degree FOV
+          if (barrel.posDist !== undefined && barrel.posDist > 0 && Math.abs(angleDiffFromBase) > Math.PI / 2) continue; // 180 degree FOV for edge turrets
 
           const dist = this.pos.dist(target.pos);
           if (dist < minDist) {
@@ -294,6 +450,12 @@ export class EnemyTank extends Entity {
       }
       
       let isShooting = !!this.target;
+      
+      // Dumb AI might miss some shots or fire randomly
+      if (this.difficulty === AiDifficulty.DUMB && this.target) {
+        if (Math.random() < 0.1) isShooting = false;
+      }
+
       if (barrel.autoAim) {
         // Check if auto-turret has a target
         let hasAutoTarget = false;
@@ -311,6 +473,16 @@ export class EnemyTank extends Entity {
       if (barrel.type === 'trap') isShooting = true; // Trappers fire constantly to build a field
       if (barrel.visualOnly) isShooting = false;
       
+      // Smart AI: Use recoil to move faster
+      if (this.difficulty === AiDifficulty.SMART && !isShooting && this.target) {
+        const moveDir = this.vel.normalize();
+        const barrelDir = new Vector(Math.cos(this.barrelAngles[i]), Math.sin(this.barrelAngles[i]));
+        // If firing would push us in the direction we are already moving, and we are not shooting at a target
+        if (moveDir.dot(barrelDir) < -0.8) {
+          isShooting = true;
+        }
+      }
+
       if (isShooting) {
         if (barrel.type === 'drone' || barrel.type === 'cruiser_drone') {
           const isCruiser = barrel.type === 'cruiser_drone';
@@ -384,16 +556,18 @@ export class EnemyTank extends Entity {
     }
 
     super.update(dt);
-    this.vel = this.vel.mult(0.98);
+    this.vel = this.vel.mult(Math.pow(0.98, dt * 60)); // Friction
 
     // Invisibility logic
-    const canBeInvisible = this.tankClass === TankClass.Manager || this.tankClass === TankClass.Stalker;
+    const canBeInvisible = this.tankClass === TankClass.Manager || this.tankClass === TankClass.Stalker || this.tankClass === TankClass.Landmine;
     if (canBeInvisible) {
       const isMoving = this.vel.mag() > 10;
-      if (isMoving || isAnyBarrelShooting) {
+      const isShooting = this.tankClass === TankClass.Landmine ? false : isAnyBarrelShooting;
+      if (isMoving || isShooting) {
         this.visibility = Math.min(1, this.visibility + dt * 4);
       } else {
-        this.visibility = Math.max(0, this.visibility - dt * 1.5);
+        const fadeRate = this.tankClass === TankClass.Landmine ? 1 / 13 : 1.5;
+        this.visibility = Math.max(0, this.visibility - dt * fadeRate);
       }
     } else {
       this.visibility = 1;
@@ -408,6 +582,7 @@ export class EnemyTank extends Entity {
   }
 
   draw(ctx: CanvasRenderingContext2D) {
+    if (this.visibility <= 0) return;
     ctx.save();
     ctx.globalAlpha = this.visibility;
     ctx.translate(this.renderPos.x, this.renderPos.y);
@@ -416,18 +591,20 @@ export class EnemyTank extends Entity {
     const outlineColor = darkenColor(this.color);
     const barrelColor = '#999999';
     const barrelOutline = darkenColor(barrelColor);
+    const scale = this.radius / 20;
 
     // Draw barrels (non-autoAim)
     const barrels = TANK_CLASSES[this.tankClass];
     ctx.fillStyle = barrelColor;
     ctx.strokeStyle = barrelOutline;
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 3 / scale;
 
     for (let i = 0; i < barrels.length; i++) {
       const barrel = barrels[i];
       if (barrel.autoAim || (barrel.visualOnly && barrel.baseType === 'square')) continue;
 
       ctx.save();
+      ctx.scale(scale, scale);
       if (barrel.posDist !== undefined && barrel.posAngle !== undefined) {
         ctx.rotate(barrel.posAngle);
         ctx.translate(barrel.posDist, 0);
@@ -457,26 +634,49 @@ export class EnemyTank extends Entity {
                          this.tankClass === TankClass.AutoUnderseer ||
                          this.tankClass === TankClass.Necromancer ||
                          this.tankClass === TankClass.GreyGoo ||
-                         this.tankClass === TankClass.Lich;
+                         this.tankClass === TankClass.Lich ||
+                         this.tankClass === TankClass.Pythonist;
+    const isHexagonBody = this.tankClass === TankClass.Smasher ||
+                          this.tankClass === TankClass.AutoSmasher ||
+                          this.tankClass === TankClass.Landmine ||
+                          this.tankClass === TankClass.Spike;
     ctx.beginPath();
     if (isSquareBody) {
       ctx.rect(-this.radius, -this.radius, this.radius * 2, this.radius * 2);
+    } else if (isHexagonBody) {
+      ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'black';
+      ctx.lineWidth = 4 / scale;
+      ctx.stroke();
+      
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const angle = (i * Math.PI) / 3;
+        const x = Math.cos(angle) * this.radius * 1.15;
+        const y = Math.sin(angle) * this.radius * 1.15;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.stroke();
     } else {
       ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = outlineColor;
+      ctx.lineWidth = 4 / scale;
+      ctx.stroke();
     }
-    ctx.fillStyle = this.color;
-    ctx.fill();
-    ctx.strokeStyle = outlineColor;
-    ctx.lineWidth = 4;
-    ctx.stroke();
 
     // Draw auto turrets (on top of body)
     ctx.strokeStyle = barrelOutline;
+    ctx.lineWidth = 2 / scale;
     for (let i = 0; i < barrels.length; i++) {
       const barrel = barrels[i];
       if (!barrel.autoAim && !(barrel.visualOnly && barrel.baseType === 'square')) continue;
       
       ctx.save();
+      ctx.scale(scale, scale);
       
       if (barrel.posDist !== undefined && barrel.posAngle !== undefined) {
         ctx.rotate(barrel.posAngle);
@@ -484,7 +684,7 @@ export class EnemyTank extends Entity {
         
         // Draw turret base (before rotation if it's a square at 0,0)
         if (barrel.drawBase && barrel.baseType === 'square' && (barrel.xOffset || 0) === 0 && (barrel.yOffset || 0) === 0) {
-          this.drawBarrelBase(ctx, barrel);
+          this.drawBarrelBase(ctx, barrel, scale);
         }
 
         ctx.save();
@@ -501,13 +701,13 @@ export class EnemyTank extends Entity {
         
         // Draw turret base (after rotation if it's not a square at 0,0)
         if (barrel.drawBase && !(barrel.baseType === 'square' && (barrel.xOffset || 0) === 0 && (barrel.yOffset || 0) === 0)) {
-          this.drawBarrelBase(ctx, barrel);
+          this.drawBarrelBase(ctx, barrel, scale);
         }
         
       } else {
         // Draw turret base (before rotation if it's a square at 0,0)
         if (barrel.drawBase && barrel.baseType === 'square' && (barrel.xOffset || 0) === 0 && (barrel.yOffset || 0) === 0) {
-          this.drawBarrelBase(ctx, barrel);
+          this.drawBarrelBase(ctx, barrel, scale);
         }
 
         ctx.save();
@@ -523,7 +723,7 @@ export class EnemyTank extends Entity {
         
         // Draw turret base (after rotation if it's not a square at 0,0)
         if (barrel.drawBase && !(barrel.baseType === 'square' && (barrel.xOffset || 0) === 0 && (barrel.yOffset || 0) === 0)) {
-          this.drawBarrelBase(ctx, barrel);
+          this.drawBarrelBase(ctx, barrel, scale);
         }
       }
       
@@ -541,7 +741,7 @@ export class EnemyTank extends Entity {
     }
   }
 
-  drawBarrelBase(ctx: CanvasRenderingContext2D, barrel: BarrelDef) {
+  drawBarrelBase(ctx: CanvasRenderingContext2D, barrel: BarrelDef, scale: number) {
     ctx.save();
     ctx.beginPath();
     if (barrel.baseType === 'triangle') {
@@ -557,7 +757,7 @@ export class EnemyTank extends Entity {
     ctx.fillStyle = '#999999';
     ctx.fill();
     ctx.strokeStyle = '#727272';
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 3 / scale;
     ctx.stroke();
     ctx.restore();
   }

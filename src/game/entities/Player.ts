@@ -44,6 +44,12 @@ export class Player extends Entity {
     this.initBarrels();
   }
 
+  updateRadius() {
+    const baseRadius = 20;
+    const level = Math.min(this.level, 45);
+    this.radius = baseRadius * (1 + (level - 1) * (0.25 / 44));
+  }
+
   initBarrels() {
     const barrels = TANK_CLASSES[this.tankClass];
     const baseReloadTime = Math.max(0.05, Math.pow(0.9, getEffectiveStat(this.stats.reload)));
@@ -59,6 +65,18 @@ export class Player extends Entity {
     this.pendingUpgrades = [];
     this.initBarrels();
     this.classChanged = true;
+    
+    // Refund bullet stats for Smasher branch (except AutoSmasher)
+    if (['Smasher', 'Landmine', 'Spike'].includes(newClass)) {
+      const bulletStats = ['bulletSpeed', 'bulletPenetration', 'bulletDamage', 'reload'] as const;
+      for (const stat of bulletStats) {
+        if (this.stats[stat] > 0) {
+          this.skillPoints += this.stats[stat];
+          this.stats[stat] = 0;
+        }
+      }
+    }
+    
     this.checkUpgrades();
   }
 
@@ -119,7 +137,7 @@ export class Player extends Entity {
         TankClass.Destroyer, TankClass.MegaTrapper, TankClass.Composition,
         TankClass.TriAngle, TankClass.Auto3, TankClass.TriTrapper, TankClass.TrapGuard,
         TankClass.Overseer, TankClass.Underseer, TankClass.Cruiser,
-        TankClass.Howitzer, TankClass.Launcher, TankClass.Spawner
+        TankClass.Howitzer, TankClass.Launcher, TankClass.Spawner, TankClass.Minigun, TankClass.Smasher
       ];
       if (tier1.includes(tank)) return 15;
       if (tier2.includes(tank)) return 30;
@@ -146,7 +164,6 @@ export class Player extends Entity {
     // Smoother slowing down (higher friction multiplier means less speed loss per frame, but we want it to feel smoother)
     // Actually, to make slowing down smoother, we can use a slightly lower multiplier (more friction) or adjust acceleration.
     // Let's use 0.92 for a bit less friction so it slides a bit more, as requested.
-    this.vel = this.vel.mult(0.92); // Friction
     
     if (this.health < this.maxHealth) {
       const timeSinceLastHit = (Date.now() - this.lastHitTime) / 1000;
@@ -156,13 +173,15 @@ export class Player extends Entity {
     }
 
     // Invisibility logic
-    const canBeInvisible = this.tankClass === TankClass.Manager || this.tankClass === TankClass.Stalker;
+    const canBeInvisible = this.tankClass === TankClass.Manager || this.tankClass === TankClass.Stalker || this.tankClass === TankClass.Landmine;
     if (canBeInvisible) {
       const isMoving = this.vel.mag() > 10;
-      if (isMoving || this.shooting) {
+      const isShooting = this.tankClass === TankClass.Landmine ? false : this.shooting;
+      if (isMoving || isShooting) {
         this.visibility = Math.min(1, this.visibility + dt * 4);
       } else {
-        this.visibility = Math.max(0, this.visibility - dt * 1.5);
+        const fadeRate = this.tankClass === TankClass.Landmine ? 1 / 13 : 1.5;
+        this.visibility = Math.max(0, this.visibility - dt * fadeRate);
       }
     } else {
       this.visibility = 1;
@@ -171,6 +190,7 @@ export class Player extends Entity {
   }
 
   draw(ctx: CanvasRenderingContext2D) {
+    if (this.visibility <= 0) return;
     ctx.save();
     ctx.globalAlpha = this.visibility;
     ctx.translate(this.renderPos.x, this.renderPos.y);
@@ -187,19 +207,23 @@ export class Player extends Entity {
 
     const outlineColor = darkenColor(this.color);
     const barrelColor = '#999999';
-    const barrelOutline = darkenColor(barrelColor);
-
+    const barrelOutline = '#727272';
+    
     // Draw barrels (non-autoAim)
     const barrels = TANK_CLASSES[this.tankClass];
+    
+    const scale = this.radius / 20;
+
     ctx.fillStyle = barrelColor;
     ctx.strokeStyle = barrelOutline;
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 3 / scale; // Adjust line width for scale
 
     for (let i = 0; i < barrels.length; i++) {
       const barrel = barrels[i];
       if (barrel.autoAim || (barrel.visualOnly && barrel.baseType === 'square')) continue;
       
       ctx.save();
+      ctx.scale(scale, scale);
       
       if (barrel.posDist !== undefined && barrel.posAngle !== undefined) {
         ctx.rotate(barrel.posAngle);
@@ -238,9 +262,22 @@ export class Player extends Entity {
                          this.tankClass === TankClass.GreyGoo ||
                          this.tankClass === TankClass.Lich ||
                          this.tankClass === TankClass.Pythonist;
+    const isHexagonBody = this.tankClass === TankClass.Smasher ||
+                          this.tankClass === TankClass.AutoSmasher ||
+                          this.tankClass === TankClass.Landmine ||
+                          this.tankClass === TankClass.Spike;
     ctx.beginPath();
     if (isSquareBody) {
       ctx.rect(-this.radius, -this.radius, this.radius * 2, this.radius * 2);
+    } else if (isHexagonBody) {
+      for (let i = 0; i < 6; i++) {
+        const angle = (i * Math.PI) / 3;
+        const x = Math.cos(angle) * this.radius * 1.15;
+        const y = Math.sin(angle) * this.radius * 1.15;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
     } else {
       ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
     }
@@ -251,11 +288,13 @@ export class Player extends Entity {
 
     // Draw auto turrets (on top of body)
     ctx.strokeStyle = '#727272'; // barrelOutline
+    ctx.lineWidth = 2 / scale;
     for (let i = 0; i < barrels.length; i++) {
       const barrel = barrels[i];
       if (!barrel.autoAim && !(barrel.visualOnly && barrel.baseType === 'square')) continue;
       
       ctx.save();
+      ctx.scale(scale, scale);
       
       if (barrel.posDist !== undefined && barrel.posAngle !== undefined) {
         ctx.rotate(barrel.posAngle);
@@ -375,6 +414,7 @@ export class Player extends Entity {
     const hpGain = 15;
     this.maxHealth += hpGain;
     this.health += hpGain;
+    this.updateRadius();
     this.checkUpgrades();
   }
 

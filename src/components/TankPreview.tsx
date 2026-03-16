@@ -88,12 +88,25 @@ export function TankPreview({ tankClass, size = 64 }: TankPreviewProps) {
                            tankClass === TankClass.GreyGoo ||
                            tankClass === TankClass.Lich ||
                            tankClass === TankClass.Pythonist;
+      const isHexagonBody = tankClass === TankClass.Smasher ||
+                            tankClass === TankClass.AutoSmasher ||
+                            tankClass === TankClass.Landmine ||
+                            tankClass === TankClass.Spike;
       ctx.beginPath();
       if (isSquareBody) {
         ctx.moveTo(-20, -20);
         ctx.lineTo(20, -20);
         ctx.lineTo(20, 20);
         ctx.lineTo(-20, 20);
+        ctx.closePath();
+      } else if (isHexagonBody) {
+        for (let i = 0; i < 6; i++) {
+          const angle = (i * Math.PI) / 3;
+          const x = Math.cos(angle) * 23; // 20 * 1.15
+          const y = Math.sin(angle) * 23;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
         ctx.closePath();
       } else {
         ctx.arc(0, 0, 20, 0, Math.PI * 2);

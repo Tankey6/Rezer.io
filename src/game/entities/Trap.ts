@@ -52,6 +52,7 @@ export class Trap extends Entity {
   }
 
   draw(ctx: CanvasRenderingContext2D) {
+    if (this.visibility <= 0) return;
     ctx.save();
     ctx.translate(this.renderPos.x, this.renderPos.y);
     
@@ -63,15 +64,18 @@ export class Trap extends Entity {
       barrels.push(AUTO_TURRET_BARREL);
     }
 
+    const scale = this.radius / 12;
+
     // Draw normal barrels
     ctx.fillStyle = '#999999';
     ctx.strokeStyle = '#727272';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2 / scale;
     
     for (const barrel of barrels) {
       if (barrel.autoAim) continue;
       
       ctx.save();
+      ctx.scale(scale, scale);
       ctx.rotate(this.angle + barrel.angleOffset);
       ctx.translate(barrel.xOffset, barrel.yOffset);
       
@@ -90,7 +94,7 @@ export class Trap extends Entity {
       }
       
       if (barrel.drawBase) {
-        this.drawBarrelBase(ctx, barrel);
+        this.drawBarrelBase(ctx, barrel, scale);
       }
       
       ctx.restore();
@@ -98,13 +102,14 @@ export class Trap extends Entity {
 
     ctx.save();
     ctx.rotate(this.angle);
+    ctx.scale(scale, scale);
     
     ctx.beginPath();
     // Draw 4-pointed star
     const numPoints = 8;
     for (let i = 0; i < numPoints; i++) {
       const a = (i * Math.PI * 2) / numPoints;
-      const r = i % 2 === 0 ? this.radius : this.radius * 0.5;
+      const r = i % 2 === 0 ? 12 : 12 * 0.5;
       if (i === 0) {
         ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
       } else {
@@ -116,21 +121,23 @@ export class Trap extends Entity {
     ctx.fillStyle = this.color;
     ctx.fill();
     ctx.strokeStyle = darkenColor(this.color);
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 3 / scale;
     ctx.stroke();
     
     ctx.restore();
 
     // Draw auto turrets
     ctx.strokeStyle = '#727272';
+    ctx.lineWidth = 2 / scale;
     for (const barrel of barrels) {
       if (!barrel.autoAim && !(barrel.visualOnly && barrel.baseType === 'square')) continue;
       
       ctx.save();
+      ctx.scale(scale, scale);
       
       // Draw turret base (before rotation if it's a square at 0,0)
       if (barrel.drawBase && barrel.baseType === 'square' && (barrel.xOffset || 0) === 0 && (barrel.yOffset || 0) === 0) {
-        this.drawBarrelBase(ctx, barrel);
+        this.drawBarrelBase(ctx, barrel, scale);
       }
 
       ctx.save();
@@ -154,7 +161,7 @@ export class Trap extends Entity {
       
       // Draw auto turret base (after rotation if it's not a square at 0,0)
       if (barrel.drawBase && !(barrel.baseType === 'square' && (barrel.xOffset || 0) === 0 && (barrel.yOffset || 0) === 0)) {
-        this.drawBarrelBase(ctx, barrel);
+        this.drawBarrelBase(ctx, barrel, scale);
       }
       
       ctx.restore();
@@ -163,7 +170,7 @@ export class Trap extends Entity {
     ctx.restore();
   }
 
-  drawBarrelBase(ctx: CanvasRenderingContext2D, barrel: BarrelDef) {
+  drawBarrelBase(ctx: CanvasRenderingContext2D, barrel: BarrelDef, scale: number) {
     ctx.save();
     ctx.beginPath();
     if (barrel.baseType === 'triangle') {
@@ -179,7 +186,7 @@ export class Trap extends Entity {
     ctx.fillStyle = '#999999';
     ctx.fill();
     ctx.strokeStyle = '#727272';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2 / scale;
     ctx.stroke();
     ctx.restore();
   }

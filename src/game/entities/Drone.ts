@@ -66,6 +66,7 @@ export class Drone extends Entity {
   }
 
   draw(ctx: CanvasRenderingContext2D) {
+    if (this.visibility <= 0) return;
     ctx.save();
     ctx.translate(this.renderPos.x, this.renderPos.y);
     
@@ -77,15 +78,18 @@ export class Drone extends Entity {
       barrels.push(AUTO_TURRET_BARREL);
     }
 
+    const scale = this.radius / 10;
+
     // Draw normal barrels
     ctx.fillStyle = '#999999';
     ctx.strokeStyle = '#727272';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2 / scale;
     
     for (const barrel of barrels) {
       if (barrel.autoAim) continue;
       
       ctx.save();
+      ctx.scale(scale, scale);
       ctx.rotate(this.angle + barrel.angleOffset);
       ctx.translate(barrel.xOffset, barrel.yOffset);
       
@@ -104,7 +108,7 @@ export class Drone extends Entity {
       }
       
       if (barrel.drawBase) {
-        this.drawBarrelBase(ctx, barrel);
+        this.drawBarrelBase(ctx, barrel, scale);
       }
       
       ctx.restore();
@@ -112,6 +116,7 @@ export class Drone extends Entity {
 
     ctx.save();
     ctx.rotate(this.angle);
+    ctx.scale(scale, scale);
     
     ctx.beginPath();
     const isSpawnerMinion = this.ownerClass === TankClass.Spawner || 
@@ -131,40 +136,42 @@ export class Drone extends Entity {
 
     if (isUnderseerDrone) {
       // Draw square for underseer drones
-      ctx.moveTo(-this.radius, -this.radius);
-      ctx.lineTo(this.radius, -this.radius);
-      ctx.lineTo(this.radius, this.radius);
-      ctx.lineTo(-this.radius, this.radius);
+      ctx.moveTo(-10, -10);
+      ctx.lineTo(10, -10);
+      ctx.lineTo(10, 10);
+      ctx.lineTo(-10, 10);
       ctx.closePath();
     } else if (isSpawnerMinion) {
       // Draw circle for spawner minions
-      ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+      ctx.arc(0, 0, 10, 0, Math.PI * 2);
     } else {
       // Draw drone shape (triangle)
-      ctx.moveTo(this.radius, 0);
-      ctx.lineTo(-this.radius * 0.5, this.radius * 0.866);
-      ctx.lineTo(-this.radius * 0.5, -this.radius * 0.866);
+      ctx.moveTo(10, 0);
+      ctx.lineTo(-10 * 0.5, 10 * 0.866);
+      ctx.lineTo(-10 * 0.5, -10 * 0.866);
       ctx.closePath();
     }
     
     ctx.fillStyle = this.color;
     ctx.fill();
     ctx.strokeStyle = darkenColor(this.color);
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 3 / scale;
     ctx.stroke();
     
     ctx.restore();
 
     // Draw auto turrets
     ctx.strokeStyle = '#727272';
+    ctx.lineWidth = 2 / scale;
     for (const barrel of barrels) {
       if (!barrel.autoAim && !(barrel.visualOnly && barrel.baseType === 'square')) continue;
       
       ctx.save();
+      ctx.scale(scale, scale);
       
       // Draw turret base (before rotation if it's a square at 0,0)
       if (barrel.drawBase && barrel.baseType === 'square' && (barrel.xOffset || 0) === 0 && (barrel.yOffset || 0) === 0) {
-        this.drawBarrelBase(ctx, barrel);
+        this.drawBarrelBase(ctx, barrel, scale);
       }
 
       ctx.save();
@@ -188,7 +195,7 @@ export class Drone extends Entity {
       
       // Draw auto turret base (after rotation if it's not a square at 0,0)
       if (barrel.drawBase && !(barrel.baseType === 'square' && (barrel.xOffset || 0) === 0 && (barrel.yOffset || 0) === 0)) {
-        this.drawBarrelBase(ctx, barrel);
+        this.drawBarrelBase(ctx, barrel, scale);
       }
       
       ctx.restore();
@@ -197,7 +204,7 @@ export class Drone extends Entity {
     ctx.restore();
   }
 
-  drawBarrelBase(ctx: CanvasRenderingContext2D, barrel: BarrelDef) {
+  drawBarrelBase(ctx: CanvasRenderingContext2D, barrel: BarrelDef, scale: number) {
     ctx.save();
     ctx.beginPath();
     if (barrel.baseType === 'triangle') {
@@ -213,7 +220,7 @@ export class Drone extends Entity {
     ctx.fillStyle = '#999999';
     ctx.fill();
     ctx.strokeStyle = '#727272';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2 / scale;
     ctx.stroke();
     ctx.restore();
   }

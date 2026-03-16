@@ -1,3 +1,9 @@
+export enum AiDifficulty {
+  DUMB,
+  NORMAL,
+  SMART
+}
+
 export function getEffectiveStat(stat: number): number {
   return stat <= 7 ? stat : 7 + (stat - 7) * 0.5;
 }
@@ -86,7 +92,7 @@ export enum TankClass {
   MachineTrapper = 'Machine Trapper',
   GatlingGun = 'Gatling Gun',
   GatlingTrapper = 'Gatling Trapper',
-  Bulletstream = 'Bulletstream',
+  Maxim = 'Maxim',
   AutoMachineTrapper = 'Auto-Machine Trapper',
   AutoDestroyer = 'Auto-Destroyer',
   Composition = 'Composition',
@@ -143,7 +149,21 @@ export enum TankClass {
   Necromancer = 'Necromancer',
   GreyGoo = 'Grey Goo',
   Lich = 'Lich',
-  Pythonist = 'Pythonist'
+  Pythonist = 'Pythonist',
+  Minigun = 'Minigun',
+  Duster = 'Duster',
+  Barricade = 'Barricade',
+  Megagun = 'Megagun',
+  Trencher = 'Trencher',
+  Heavyweight = 'Heavyweight',
+  Brawler = 'Brawler',
+  Smasher = 'Smasher',
+  AutoSmasher = 'Auto Smasher',
+  Landmine = 'Landmine',
+  Spike = 'Spike',
+  Formaldehyde = 'Formaldehyde',
+  Crowbar = 'Crowbar',
+  Twirler = 'Twirler'
 }
 
 export enum CrasherType {

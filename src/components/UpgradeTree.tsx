@@ -44,8 +44,8 @@ export const UpgradeTree: React.FC<UpgradeTreeProps> = ({ onClose }) => {
         TankClass.Gunner, TankClass.MachineTrapper, TankClass.GatlingGun,
         TankClass.Destroyer, TankClass.MegaTrapper, TankClass.Composition,
         TankClass.TriAngle, TankClass.Auto3, TankClass.TriTrapper, TankClass.TrapGuard,
-        TankClass.Overseer, TankClass.Cruiser, TankClass.Manager,
-        TankClass.Howitzer, TankClass.Launcher, TankClass.Spawner, TankClass.Underseer
+        TankClass.Overseer, TankClass.Cruiser, TankClass.Minigun,
+        TankClass.Howitzer, TankClass.Launcher, TankClass.Spawner, TankClass.Underseer, TankClass.Smasher
       ];
       if (tank === TankClass.Basic) return 0;
       if (tier1.includes(tank)) return 15;
@@ -76,11 +76,22 @@ export const UpgradeTree: React.FC<UpgradeTreeProps> = ({ onClose }) => {
 
     // Tier 1
     const t1Tanks = (UPGRADE_PATHS[TankClass.Basic] || []).filter(t => tiers[t] === 1);
+    const directT2Tanks = (UPGRADE_PATHS[TankClass.Basic] || []).filter(t => tiers[t] === 2);
+    
+    // We will treat direct T2 tanks as having a dummy T1 parent
+    const allBranches = [...t1Tanks, ...directT2Tanks.map(t => ({ isDummy: true, target: t }))];
     
     let currentY = 0;
     const t1RelPositions: number[] = [];
-    t1Tanks.forEach(tank => {
-      const h = getBranchHeight(tank);
+    allBranches.forEach(branch => {
+      let h = 0;
+      if (typeof branch === 'string') {
+        h = getBranchHeight(branch as TankClass);
+      } else {
+        // For direct T2 tanks, the height is based on their T3 upgrades
+        const t3Tanks = (UPGRADE_PATHS[branch.target] || []).filter(t => tiers[t] === 3);
+        h = Math.max(1, t3Tanks.length) * Y_SPACING;
+      }
       t1RelPositions.push(currentY + h / 2);
       currentY += h + Y_SPACING * 0.2;
     });
@@ -88,40 +99,64 @@ export const UpgradeTree: React.FC<UpgradeTreeProps> = ({ onClose }) => {
     const totalT1Height = currentY - Y_SPACING * 0.2;
     const startY = -totalT1Height / 2;
 
-    t1Tanks.forEach((t1Tank, i) => {
+    allBranches.forEach((branch, i) => {
       const y = startY + t1RelPositions[i];
-      const t1Node = createNode(t1Tank, X_SPACING, y, root.id);
-
-      // Tier 2 and Tier 3 jumps
-      const upgrades = UPGRADE_PATHS[t1Tank] || [];
-      const t2Tanks = upgrades.filter(t => tiers[t] === 2);
-      const t3Tanks = upgrades.filter(t => tiers[t] === 3);
       
-      const totalChildren = t2Tanks.length + t3Tanks.length;
-      const childrenHeight = (totalChildren - 1) * Y_SPACING;
-      const childrenStartY = y - childrenHeight / 2;
+      if (typeof branch === 'string') {
+        const t1Tank = branch as TankClass;
+        const t1Node = createNode(t1Tank, X_SPACING, y, root.id);
 
-      // Handle Tier 2 tanks
-      t2Tanks.forEach((t2Tank, j) => {
-        const t2Y = childrenStartY + j * Y_SPACING;
-        const t2Node = createNode(t2Tank, X_SPACING * 2.2, t2Y, t1Node.id);
-
-        // Tier 3 - Horizontal to the right
-        const t3TanksOfT2 = (UPGRADE_PATHS[t2Tank] || []).filter(t => tiers[t] === 3);
-        t3TanksOfT2.forEach((t3Tank, k) => {
-          const t3X = X_SPACING * 2.2 + 450 + k * (X_SPACING * 0.8);
-          createNode(t3Tank, t3X, t2Y, t2Node.id);
-        });
-      });
-
-      // Handle Tier 3 jumps (Level 15 -> Level 45)
-      t3Tanks.forEach((t3Tank, j) => {
-        const dummyY = childrenStartY + (t2Tanks.length + j) * Y_SPACING;
-        const dummyNode = createNode('dummy', X_SPACING * 2.2, dummyY, t1Node.id);
+        // Tier 2 and Tier 3 jumps
+        const upgrades = UPGRADE_PATHS[t1Tank] || [];
+        const t2Tanks = upgrades.filter(t => tiers[t] === 2);
+        const t3Tanks = upgrades.filter(t => tiers[t] === 3);
         
-        const t3X = X_SPACING * 2.2 + 450;
-        createNode(t3Tank, t3X, dummyY, dummyNode.id);
-      });
+        const totalChildren = t2Tanks.length + t3Tanks.length;
+        const childrenHeight = (totalChildren - 1) * Y_SPACING;
+        const childrenStartY = y - childrenHeight / 2;
+
+        // Handle Tier 2 tanks
+        t2Tanks.forEach((t2Tank, j) => {
+          const t2Y = childrenStartY + j * Y_SPACING;
+          const t2Node = createNode(t2Tank, X_SPACING * 2.2, t2Y, t1Node.id);
+
+          // Tier 3 - Horizontal to the right
+          const t3TanksOfT2 = (UPGRADE_PATHS[t2Tank] || []).filter(t => tiers[t] === 3);
+          t3TanksOfT2.forEach((t3Tank, k) => {
+            const t3X = X_SPACING * 2.2 + 450 + k * (X_SPACING * 0.8);
+            createNode(t3Tank, t3X, t2Y, t2Node.id);
+          });
+        });
+
+        // Handle Tier 3 jumps (Level 15 -> Level 45)
+        t3Tanks.forEach((t3Tank, j) => {
+          const dummyY = childrenStartY + (t2Tanks.length + j) * Y_SPACING;
+          const dummyNode = createNode('dummy', X_SPACING * 2.2, dummyY, t1Node.id);
+          
+          const t3X = X_SPACING * 2.2 + 450;
+          createNode(t3Tank, t3X, dummyY, dummyNode.id);
+        });
+      } else {
+        // Direct T2 tank (e.g. Smasher)
+        const t2Tank = branch.target;
+        const dummyNode = createNode('dummy', X_SPACING, y, root.id);
+        const t2Node = createNode(t2Tank, X_SPACING * 2.2, y, dummyNode.id);
+        
+        const t3TanksOfT2 = (UPGRADE_PATHS[t2Tank] || []).filter(t => tiers[t] === 3);
+        const childrenHeight = (t3TanksOfT2.length - 1) * Y_SPACING;
+        const childrenStartY = y - childrenHeight / 2;
+        
+        t3TanksOfT2.forEach((t3Tank, k) => {
+          const t3Y = childrenStartY + k * Y_SPACING;
+          const t3X = X_SPACING * 2.2 + 450;
+          // We need a dummy node for the vertical spread if there are multiple T3s?
+          // Wait, the T2 node is at `y`. The T3 nodes should be spread vertically.
+          // Let's just create them at `t3Y`.
+          // But `createNode` draws an edge from parent to child.
+          // If we spread them vertically, the edges will go from `t2Node` to `t3Tank`.
+          createNode(t3Tank, t3X, t3Y, t2Node.id);
+        });
+      }
     });
 
     return { nodes: nodeList, edges: edgeList };

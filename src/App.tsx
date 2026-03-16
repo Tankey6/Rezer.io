@@ -41,7 +41,6 @@ export default function App() {
 
     const game = new Game(canvasRef.current);
     gameRef.current = game;
-    game.connect();
 
     const handleResize = () => {
       game.resize(window.innerWidth, window.innerHeight);
@@ -61,6 +60,7 @@ export default function App() {
 
     game.onGameOver = (info) => {
       setDeathInfo(info);
+      setIsSpawning(false);
       if (gameRef.current) {
         gameRef.current.cameraTargetId = info.killerId;
       }
@@ -77,6 +77,9 @@ export default function App() {
 
   const handleSpawn = () => {
     if (gameRef.current) {
+      if (!gameRef.current.ws || gameRef.current.ws.readyState !== WebSocket.OPEN) {
+        gameRef.current.connect();
+      }
       const level = deathInfo ? Math.max(1, Math.floor(deathInfo.level / 2)) : 1;
       gameRef.current.spawn(tankName || 'Unnamed Tank', level);
       gameRef.current.start();
@@ -103,7 +106,6 @@ export default function App() {
     if (canvasRef.current) {
       const game = new Game(canvasRef.current);
       gameRef.current = game;
-      game.connect();
       game.resize(window.innerWidth, window.innerHeight);
       game.onStateChange = setGameState;
     }
@@ -249,7 +251,7 @@ export default function App() {
                   onClick={() => setShowClassUpgrades(false)}
                   className="text-white text-xs bg-black/30 hover:bg-black/50 px-2 py-1 rounded cursor-pointer pointer-events-auto"
                 >
-                  Ignore
+                  Hide
                 </button>
               </div>
               <div className="flex flex-wrap gap-2 max-w-md">
@@ -298,7 +300,17 @@ export default function App() {
             )}
             {Object.entries(statLabels).map(([key, label], index) => {
               const level = gameState.stats?.[key] || 0;
-              const maxLevel = gameState.level >= 80 ? 14 : 7;
+              const isSmasherBranch = [
+                'Smasher', 'AutoSmasher', 'Landmine', 'Spike'
+              ].includes(gameState.tankClass);
+              
+              // Smasher, Landmine, Spike don't have bullet stats
+              const isBulletStat = ['bulletSpeed', 'bulletPenetration', 'bulletDamage', 'reload'].includes(key);
+              if (isBulletStat && ['Smasher', 'Landmine', 'Spike'].includes(gameState.tankClass)) {
+                return null;
+              }
+              
+              const maxLevel = isSmasherBranch ? 10 : 7;
               const canUpgrade = (gameState.skillPoints || 0) > 0 && level < maxLevel;
 
               return (
@@ -343,6 +355,14 @@ export default function App() {
           <div className="absolute top-4 right-4 text-white font-bold text-right drop-shadow-md pointer-events-none">
             <div>Auto Fire: {gameState.autoFire ? 'ON' : 'OFF'} (E)</div>
             <div>Auto Spin: {gameState.autoSpin ? 'ON' : 'OFF'} (C)</div>
+            {gameState.pendingUpgrades && gameState.pendingUpgrades.length > 0 && !showClassUpgrades && (
+              <button 
+                onClick={() => setShowClassUpgrades(true)} 
+                className="mt-2 text-xs bg-[#00b2e1] hover:bg-[#0096be] px-3 py-2 rounded cursor-pointer pointer-events-auto transition-colors block ml-auto"
+              >
+                Show Upgrades
+              </button>
+            )}
             <button 
               onClick={() => setShowUpgradeTree(true)} 
               className="mt-2 text-xs bg-black/30 hover:bg-black/50 px-3 py-2 rounded cursor-pointer pointer-events-auto transition-colors"

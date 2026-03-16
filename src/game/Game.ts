@@ -1,6 +1,6 @@
 import { Vector } from './Vector.ts';
 import { Player } from './entities/Player.ts';
-import { Bullet } from './entities/Bullet.ts';
+import { Bullet, BulletPool } from './entities/Bullet.ts';
 import { Trap } from './entities/Trap.ts';
 import { Drone } from './entities/Drone.ts';
 import { Shape } from './entities/Shape.ts';
@@ -35,7 +35,8 @@ export class Game {
     }
     return undefined;
   }
-  bullets: Bullet[] = [];
+  bulletPool: BulletPool = new BulletPool();
+  bullets: Bullet[] = this.bulletPool.active;
   traps: Trap[] = [];
   drones: Drone[] = [];
   shapes: Shape[] = [];
@@ -226,14 +227,7 @@ export class Game {
         this.lastServerVel = new Vector(vx, vy);
         
         // Reconciliation
-        const dist = p.pos.dist(this.lastServerPos);
-        if (dist > 100) {
-          p.pos = this.lastServerPos.copy();
-        } else {
-          // Hitbox-Biased Smoothing
-          const bias = Math.min(1, dist / Math.max(1, p.radius * 0.5));
-          p.pos = p.pos.lerp(this.lastServerPos, Math.max(0.2, bias));
-        }
+        p.pos = this.lastServerPos.copy();
         p.vel = this.lastServerVel.copy();
         
         this.pendingInputs = this.pendingInputs.filter(input => input.sequence > lastSequence);
@@ -291,7 +285,7 @@ export class Game {
       currentBulletIds.add(id);
       let b = this.bulletMap.get(id);
       if (!b) {
-        b = new Bullet(new Vector(x, y), new Vector(0, 0), -1, 0, 0, radius, color, isRailgun);
+        b = this.bulletPool.spawn(new Vector(x, y), new Vector(0, 0), -1, 0, 0, radius, color, isRailgun);
         b.id = id;
         this.bulletMap.set(id, b);
       }
@@ -313,9 +307,15 @@ export class Game {
       b.angle = angle;
     }
     for (const id of this.bulletMap.keys()) {
-      if (!currentBulletIds.has(id)) this.bulletMap.delete(id);
+      if (!currentBulletIds.has(id)) {
+        const b = this.bulletMap.get(id)!;
+        if (b.poolIndex !== -1) {
+          this.bulletPool.despawn(b.poolIndex);
+        }
+        this.bulletMap.delete(id);
+      }
     }
-    this.bullets = Array.from(this.bulletMap.values());
+    // this.bullets is already linked to this.bulletPool.active
 
     // Shapes
     const numShapes = reader.readUint16();
@@ -596,7 +596,11 @@ export class Game {
   }
 
   applyInput(player: Player, input: any, dt: number) {
-    const speed = 200 + getEffectiveStat(player.stats.movementSpeed) * 12;
+    let baseSpeed = 200 + getEffectiveStat(player.stats.movementSpeed) * 12;
+    if (['Smasher', 'AutoSmasher', 'Landmine', 'Spike'].includes(player.tankClass)) {
+      baseSpeed *= 1.15;
+    }
+    const speed = baseSpeed * Math.max(0.3, Math.pow(2, -0.01 * player.level));
     const accel = speed * 3.0;
     
     if (input.keys['w'] || input.keys['arrowup']) player.vel.y -= accel * dt;
@@ -605,8 +609,11 @@ export class Game {
     if (input.keys['d'] || input.keys['arrowright']) player.vel.x += accel * dt;
     
     player.update(dt);
+    player.vel = player.vel.mult(Math.pow(0.92, dt * 60)); // Friction
     this.applySoftBorder(player, dt);
   }
+
+  queuedUpgrades: Map<string, number> = new Map();
 
   constructor(canvas?: HTMLCanvasElement, isServer: boolean = false) {
     this.isServer = isServer;
@@ -851,10 +858,18 @@ export class Game {
       if (e.key.toLowerCase() === 'h') {
         this.requestSync();
       }
+      if (e.key.toLowerCase() === 'm') {
+        this.keys['m'] = true;
+      }
       if (e.key >= '1' && e.key <= '8') {
         const statKeys = ['healthRegen', 'maxHealth', 'bodyDamage', 'bulletSpeed', 'bulletPenetration', 'bulletDamage', 'reload', 'movementSpeed'];
         const index = parseInt(e.key) - 1;
-        this.upgradeStat(statKeys[index] as any);
+        const stat = statKeys[index];
+        if (this.keys['m']) {
+          this.maxUpgradeStat(stat);
+        } else {
+          this.upgradeStat(stat as any);
+        }
       }
     };
     const handleKeyUp = (e: KeyboardEvent) => {
@@ -862,6 +877,9 @@ export class Game {
         return;
       }
       this.keys[e.key.toLowerCase()] = false;
+      if (e.key.toLowerCase() === 'm') {
+        this.keys['m'] = false;
+      }
     };
     
     const handleMouseMove = (e: MouseEvent) => {
@@ -974,7 +992,7 @@ export class Game {
     
     // Clear all entities
     this.players.clear();
-    this.bullets = [];
+    this.bulletPool.clear();
     this.traps = [];
     this.drones = [];
     this.shapes = [];
@@ -1118,7 +1136,8 @@ export class Game {
         
         const bulletDamage = entity.damage * barrel.damageMult;
         const bulletPenetration = entity.penetration * barrel.penMult;
-        const bulletRadius = 8 * (barrel.bulletSizeMult || 1);
+        const scale = entity.radius / 20;
+        const bulletRadius = 8 * (barrel.bulletSizeMult || 1) * scale;
 
         if (barrel.type === 'trap') {
           const t = new Trap(spawnPos, vel, entity.ownerId, entity.color, bulletDamage, bulletPenetration, bulletRadius * 1.5, entity.ownerClass);
@@ -1127,7 +1146,7 @@ export class Game {
           this.traps.push(t);
         } else if (barrel.type === 'drone' || barrel.type === 'cruiser_drone') {
           const isCruiser = barrel.type === 'cruiser_drone';
-          const dSpeed = isCruiser ? bulletSpeed * 0.6 : bulletSpeed * 0.3;
+          const dSpeed = isCruiser ? bulletSpeed * 0.45 : bulletSpeed * 0.3;
           const dRadius = isCruiser ? bulletRadius * 1.2 : bulletRadius * 1.8;
           const dPenetration = isCruiser ? 1 : bulletPenetration;
           const dDamage = isCruiser ? bulletDamage * 0.25 : bulletDamage;
@@ -1136,10 +1155,9 @@ export class Game {
           d.missileType = barrel.missileType || MissileType.None;
           this.drones.push(d);
         } else {
-          const b = new Bullet(spawnPos, vel, entity.ownerId, bulletDamage, bulletPenetration, bulletRadius, entity.color, false, entity.ownerClass);
+          const b = this.bulletPool.spawn(spawnPos, vel, entity.ownerId, bulletDamage, bulletPenetration, bulletRadius, entity.color, false, entity.ownerClass);
           b.hasAutoTurret = barrel.hasAutoTurret || false;
           b.missileType = barrel.missileType || MissileType.None;
-          this.bullets.push(b);
         }
         
         const recoil = barrel.recoilMult !== undefined ? barrel.recoilMult : barrel.damageMult;
@@ -1149,6 +1167,10 @@ export class Game {
   }
 
   update(dt: number) {
+    if (this.player) {
+      this.processQueuedUpgrades();
+    }
+    
     if (!this.isServer) {
       this.localServerTime += dt * 1000;
       
@@ -1159,8 +1181,8 @@ export class Game {
         if (this.spawnRetryTimer > 1.0) {
           this.spawnRetryTimer = 0;
           this.spawnRetryCount++;
-          if (this.spawnRetryCount >= 8) {
-            console.log('Spawn failed 8 times, reconnecting...');
+          if (this.spawnRetryCount >= 5) {
+            console.log('Spawn failed 5 times, reconnecting...');
             this.spawnRetryCount = 0;
             if (this.ws) {
               this.ws.close();
@@ -1255,7 +1277,10 @@ export class Game {
         player.classChanged = false;
       }
 
-      const speed = 200 + getEffectiveStat(player.stats.movementSpeed) * 12;
+      let speed = 200 + getEffectiveStat(player.stats.movementSpeed) * 12;
+      if (['Smasher', 'AutoSmasher', 'Landmine', 'Spike'].includes(player.tankClass)) {
+        speed *= 1.15;
+      }
       const accel = speed * 3.0;
       
       if (input.keys['w'] || input.keys['arrowup']) player.vel.y -= accel * dt;
@@ -1268,6 +1293,7 @@ export class Game {
         player.angle = Math.atan2(input.mousePos.y - player.pos.y, input.mousePos.x - player.pos.x);
       }
       player.update(dt);
+      player.vel = player.vel.mult(Math.pow(0.92, dt * 60)); // Friction
 
       const isShooting = input.mouseDown || input.autoFire;
       player.shooting = isShooting;
@@ -1313,7 +1339,7 @@ export class Game {
             const angleToTarget = Math.atan2(s.pos.y - spawnPos.y, s.pos.x - spawnPos.x);
             const angleDiffFromBase = Math.atan2(Math.sin(angleToTarget - barrelBaseAngle), Math.cos(angleToTarget - barrelBaseAngle));
             
-            if (Math.abs(angleDiffFromBase) > Math.PI / 2) continue; // 180 degree FOV (90 degrees each side)
+            if (barrel.posDist !== undefined && barrel.posDist > 0 && Math.abs(angleDiffFromBase) > Math.PI / 2) continue; // 180 degree FOV (90 degrees each side) for edge turrets
 
             const dist = spawnPos.dist(s.pos);
             if (dist < minDist) {
@@ -1332,7 +1358,7 @@ export class Game {
             
             // Clamp to 180 degree limit relative to tank rotation
             const finalAngleDiff = Math.atan2(Math.sin(player.barrelAngles[i] - barrelBaseAngle), Math.cos(player.barrelAngles[i] - barrelBaseAngle));
-            if (Math.abs(finalAngleDiff) > Math.PI / 2) {
+            if (barrel.posDist !== undefined && barrel.posDist > 0 && Math.abs(finalAngleDiff) > Math.PI / 2) {
               player.barrelAngles[i] = barrelBaseAngle + (finalAngleDiff > 0 ? Math.PI / 2 : -Math.PI / 2);
             }
             
@@ -1391,7 +1417,8 @@ export class Game {
               const bulletSpeed = (400 + getEffectiveStat(player.stats.bulletSpeed) * 40) * barrel.speedMult;
               const bulletDamage = (750 + getEffectiveStat(player.stats.bulletDamage) * 150) * barrel.damageMult * Math.pow((bulletSpeed / 400),1.5);
               const bulletPenetration = (0.2 + getEffectiveStat(player.stats.bulletPenetration) * 0.05) * barrel.penMult;
-              const bulletRadius = 8 * (barrel.bulletSizeMult || 1);
+              const scale = player.radius / 20;
+              const bulletRadius = 8 * (barrel.bulletSizeMult || 1) * scale;
               
               const angle = barrelAngle + (Math.random() - 0.5) * barrel.spread;
               const dir = new Vector(Math.cos(angle), Math.sin(angle));
@@ -1413,7 +1440,7 @@ export class Game {
                  this.traps.push(t);
               } else if (barrel.type === 'drone' || barrel.type === 'cruiser_drone') {
                  const isCruiser = barrel.type === 'cruiser_drone';
-                 const dSpeed = isCruiser ? bulletSpeed * 0.66 : bulletSpeed * 0.33;
+                 const dSpeed = isCruiser ? bulletSpeed * 0.45 : bulletSpeed * 0.3;
                  const dRadius = isCruiser ? bulletRadius * 1.2 : bulletRadius * 1.8;
                  const dPenetration = isCruiser ? 1 : bulletPenetration;
                  const dDamage = isCruiser ? bulletDamage * 0.25 : bulletDamage;
@@ -1424,10 +1451,9 @@ export class Game {
                  if (isCruiser) playerCruiserDroneCount++;
                  else playerDroneCount++;
               } else {
-                 const b = new Bullet(spawnPos, vel, player.id, bulletDamage, bulletPenetration, bulletRadius, player.color, player.tankClass === TankClass.Railgun, player.tankClass);
+                 const b = this.bulletPool.spawn(spawnPos, vel, player.id, bulletDamage, bulletPenetration, bulletRadius, player.color, player.tankClass === TankClass.Railgun, player.tankClass);
                  b.hasAutoTurret = barrel.hasAutoTurret || false;
                  b.missileType = barrel.missileType || MissileType.None;
-                 this.bullets.push(b);
               }
               
               const recoil = barrel.recoilMult !== undefined ? barrel.recoilMult : barrel.damageMult;
@@ -1453,6 +1479,11 @@ export class Game {
 
       player.update(dt);
       if (player.dead) {
+        if (this.isServer) {
+          const totalScore = calculateTotalXp(player.level, player.xp);
+          const xpReward = Math.floor(Math.pow(Math.sqrt(totalScore), 1.7));
+          this.distributeXp(player, xpReward);
+        }
         console.log('Player dead, calling onPlayerDeath', playerId);
         if (playerId === this.myPlayerId) {
           this.killerId = player.lastDamagedBy;
@@ -1490,8 +1521,8 @@ export class Game {
       }
       
       if (shouldRemove) {
-        this.bullets.splice(i, 1);
         this.bulletMap.delete(b.id);
+        this.bulletPool.despawn(i);
       }
     }
 
@@ -1603,7 +1634,8 @@ export class Game {
       }
 
       e.tick(dt, this.enemyTargets, (type, pos, vel, stats, barrel) => {
-        const bulletRadius = 8 * (barrel.bulletSizeMult || 1);
+        const scale = e.radius / 20;
+        const bulletRadius = 8 * (barrel.bulletSizeMult || 1) * scale;
         if (type === 'trap') {
           const t = new Trap(pos, vel, e.id, e.color, stats.bulletDamage, stats.bulletPen, bulletRadius * 1.5, e.tankClass);
           t.hasAutoTurret = barrel.hasAutoTurret || false;
@@ -1612,16 +1644,15 @@ export class Game {
         } else if (type === 'drone' || type === 'cruiser_drone') {
           const isCruiser = type === 'cruiser_drone';
           const dRadius = isCruiser ? bulletRadius * 1.2 : bulletRadius * 1.8;
-          const dSpeed = stats.bulletSpeed * (isCruiser ? 0.66 : 0.33);
+          const dSpeed = stats.bulletSpeed * (isCruiser ? 0.25 : 0.1);
           const d = new Drone(pos, vel, e.id, e.color, stats.bulletDamage, stats.bulletPen, dRadius, dSpeed, isCruiser, e.tankClass);
           d.hasAutoTurret = barrel.hasAutoTurret || false;
           d.missileType = barrel.missileType || MissileType.None;
           this.drones.push(d);
         } else {
-          const b = new Bullet(pos, vel, e.id, stats.bulletDamage, stats.bulletPen, bulletRadius, e.color, e.tankClass === TankClass.Railgun, e.tankClass);
+          const b = this.bulletPool.spawn(pos, vel, e.id, stats.bulletDamage, stats.bulletPen, bulletRadius, e.color, e.tankClass === TankClass.Railgun, e.tankClass);
           b.hasAutoTurret = barrel.hasAutoTurret || false;
           b.missileType = barrel.missileType || MissileType.None;
-          this.bullets.push(b);
         }
       }, droneCount, cruiserDroneCount);
 
@@ -1743,6 +1774,21 @@ export class Game {
     entity.vel = entity.vel.add(force.mult(dt));
   }
 
+  private distributeXp(entity: Entity, totalXp: number) {
+    if (!this.isServer) return;
+    
+    const totalDamage = Array.from(entity.damageMap.values()).reduce((a, b) => a + b, 0);
+    if (totalDamage <= 0) return;
+
+    for (const [damagerId, damage] of entity.damageMap.entries()) {
+      const share = damage / totalDamage;
+      const xpReward = Math.floor(totalXp * share);
+      if (xpReward > 0) {
+        this.giveXp(damagerId, xpReward);
+      }
+    }
+  }
+
   giveXp(ownerId: number, amount: number) {
     if (this.players.has(ownerId)) {
       this.players.get(ownerId)!.gainXp(amount);
@@ -1837,7 +1883,7 @@ export class Game {
               s.vel = s.vel.add(dir.mult(100 * dt));
             }
 
-            if (s.dead) this.giveXp(b.ownerId, s.xpValue);
+            if (s.dead) this.distributeXp(s, s.xpValue);
           }
         } else if (other instanceof Crasher) {
           const c = other;
@@ -1846,7 +1892,7 @@ export class Game {
             let damageToDeal = b.damage * dt;
             if (b.ownerClass === TankClass.Excavator) damageToDeal *= 0.75;
             c.takeDamage(damageToDeal, b.ownerId);
-            if (c.dead) this.giveXp(b.ownerId, 15);
+            if (c.dead) this.distributeXp(c, 15);
           }
         } else if (other instanceof EnemyTank) {
           const e = other;
@@ -1862,7 +1908,7 @@ export class Game {
             if (e.dead) {
               const totalScore = calculateTotalXp(e.level, e.xp);
               const xpReward = Math.floor(Math.pow(Math.sqrt(totalScore), 1.7));
-              this.giveXp(b.ownerId, xpReward);
+              this.distributeXp(e, xpReward);
             }
           }
         } else if (other instanceof Player) {
@@ -1905,7 +1951,7 @@ export class Game {
               s.vel = s.vel.add(dir.mult(100 * dt));
             }
 
-            if (s.dead) this.giveXp(t.ownerId, s.xpValue);
+            if (s.dead) this.distributeXp(s, s.xpValue);
           }
         } else if (other instanceof Crasher) {
           const c = other;
@@ -1914,7 +1960,7 @@ export class Game {
             c.takeDamage(t.damage * dt, t.ownerId);
             const dir = c.pos.sub(t.pos).normalize();
             c.vel = c.vel.add(dir.mult(100 * dt));
-            if (c.dead) this.giveXp(t.ownerId, 15);
+            if (c.dead) this.distributeXp(c, 15);
           }
         } else if (other instanceof EnemyTank) {
           const e = other;
@@ -1926,7 +1972,7 @@ export class Game {
             if (e.dead) {
               const totalScore = calculateTotalXp(e.level, e.xp);
               const xpReward = Math.floor(Math.pow(Math.sqrt(totalScore), 1.7));
-              this.giveXp(t.ownerId, xpReward);
+              this.distributeXp(e, xpReward);
             }
           }
         } else if (other instanceof Player) {
@@ -2037,7 +2083,7 @@ export class Game {
                     MissileType.UnderseerDrone
                   );
                   this.drones.push(drone);
-                  this.giveXp(d.ownerId, s.xpValue);
+                  this.distributeXp(s, s.xpValue);
                   continue; // Skip normal damage logic
                 }
               }
@@ -2059,7 +2105,7 @@ export class Game {
             }
             d.vel = d.vel.sub(dir.mult(pushForce * dt));
 
-            if (s.dead) this.giveXp(d.ownerId, s.xpValue);
+            if (s.dead) this.distributeXp(s, s.xpValue);
           }
         } else if (other instanceof Crasher) {
           const c = other;
@@ -2069,7 +2115,7 @@ export class Game {
             const dir = c.pos.sub(d.pos).normalize();
             c.vel = c.vel.add(dir.mult(100 * dt));
             d.vel = d.vel.sub(dir.mult(100 * dt));
-            if (c.dead) this.giveXp(d.ownerId, 15);
+            if (c.dead) this.distributeXp(c, 15);
           }
         } else if (other instanceof EnemyTank) {
           const e = other;
@@ -2082,7 +2128,7 @@ export class Game {
             if (e.dead) {
               const totalScore = calculateTotalXp(e.level, e.xp);
               const xpReward = Math.floor(Math.pow(Math.sqrt(totalScore), 1.7));
-              this.giveXp(d.ownerId, xpReward);
+              this.distributeXp(e, xpReward);
             }
           }
         } else if (other instanceof Player) {
@@ -2115,7 +2161,9 @@ export class Game {
     // Player collisions
     for (const p of this.players.values()) {
       if (p.dead) continue;
-      const bodyDamage = 400 + getEffectiveStat(p.stats.bodyDamage) * 200;
+      let bodyDamage = 400 + getEffectiveStat(p.stats.bodyDamage) * 200;
+      if (p.tankClass === TankClass.Spike) bodyDamage *= 1.5;
+      
       const nearby = this.grid.getNearby(p.pos.x, p.pos.y, p.radius + 150);
       for (const other of nearby) {
         if (other.dead || other === p) continue;
@@ -2139,7 +2187,7 @@ export class Game {
               s.vel = s.vel.sub(dir.mult(pushForce * dt));
             }
 
-            if (s.dead) p.gainXp(s.xpValue);
+            if (s.dead) this.distributeXp(s, s.xpValue);
           }
         } else if (other instanceof Crasher) {
           const c = other;
@@ -2150,7 +2198,59 @@ export class Game {
             p.vel = p.vel.add(dir.mult(200 * dt));
             c.vel = c.vel.sub(dir.mult(200 * dt));
 
-            if (c.dead) p.gainXp(15);
+            if (c.dead) this.distributeXp(c, 15);
+          }
+        } else if (other instanceof EnemyTank) {
+          const e = other;
+          if (p.pos.dist(e.pos) < p.radius + e.radius) {
+            let bodyDamageP = 400 + getEffectiveStat(p.stats.bodyDamage) * 200;
+            if (p.tankClass === TankClass.Spike) bodyDamageP *= 1.5;
+            let bodyDamageE = 400 + getEffectiveStat(e.stats.bodyDamage) * 200;
+            if (e.tankClass === TankClass.Spike) bodyDamageE *= 1.5;
+            
+            e.takeDamage(bodyDamageP * dt, p.id);
+            p.takeDamage(bodyDamageE * dt, e.id);
+            
+            const dir = p.pos.sub(e.pos).normalize();
+            p.vel = p.vel.add(dir.mult(150 * dt));
+            e.vel = e.vel.sub(dir.mult(150 * dt));
+            
+            if (e.dead) {
+              const totalScore = calculateTotalXp(e.level, e.xp);
+              const xpReward = Math.floor(Math.pow(Math.sqrt(totalScore), 1.7));
+              this.distributeXp(e, xpReward);
+            }
+            if (p.dead) {
+              const totalScore = calculateTotalXp(p.level, p.xp);
+              const xpReward = Math.floor(Math.pow(Math.sqrt(totalScore), 1.7));
+              this.distributeXp(p, xpReward);
+            }
+          }
+        } else if (other instanceof Player && other.id > p.id) {
+          const p2 = other;
+          if (!p.isInvincible && !p2.isInvincible && p.pos.dist(p2.pos) < p.radius + p2.radius) {
+            let bodyDamage1 = 400 + getEffectiveStat(p.stats.bodyDamage) * 200;
+            if (p.tankClass === TankClass.Spike) bodyDamage1 *= 1.5;
+            let bodyDamage2 = 400 + getEffectiveStat(p2.stats.bodyDamage) * 200;
+            if (p2.tankClass === TankClass.Spike) bodyDamage2 *= 1.5;
+            
+            p2.takeDamage(bodyDamage1 * dt, p.id);
+            p.takeDamage(bodyDamage2 * dt, p2.id);
+            
+            const dir = p.pos.sub(p2.pos).normalize();
+            p.vel = p.vel.add(dir.mult(150 * dt));
+            p2.vel = p2.vel.sub(dir.mult(150 * dt));
+            
+            if (p2.dead) {
+              const totalScore = calculateTotalXp(p2.level, p2.xp);
+              const xpReward = Math.floor(Math.pow(Math.sqrt(totalScore), 1.7));
+              this.distributeXp(p2, xpReward);
+            }
+            if (p.dead) {
+              const totalScore = calculateTotalXp(p.level, p.xp);
+              const xpReward = Math.floor(Math.pow(Math.sqrt(totalScore), 1.7));
+              this.distributeXp(p, xpReward);
+            }
           }
         }
       }
@@ -2185,6 +2285,10 @@ export class Game {
     // Enemy collisions
     for (const e of this.enemies) {
       if (e.dead) continue;
+      
+      let bodyDamageE = 400 + getEffectiveStat(e.stats.bodyDamage) * 200;
+      if (e.tankClass === TankClass.Spike) bodyDamageE *= 1.5;
+      
       const nearby = this.grid.getNearby(e.pos.x, e.pos.y, e.radius + 150);
       for (const other of nearby) {
         if (other.dead || other === e) continue;
@@ -2192,7 +2296,7 @@ export class Game {
         if (other instanceof Shape) {
           const s = other;
           if (e.pos.dist(s.pos) < e.radius + s.radius) {
-            s.takeDamage(100 * dt, e.id);
+            s.takeDamage(bodyDamageE * dt, e.id);
             e.takeDamage(s.damage * dt, s.id);
 
             const dist = e.pos.dist(s.pos);
@@ -2208,13 +2312,25 @@ export class Game {
               s.vel = s.vel.sub(dir.mult(pushForce * dt));
             }
 
-            if (s.dead) e.gainXp(s.xpValue);
+            if (s.dead) this.distributeXp(s, s.xpValue);
+          }
+        } else if (other instanceof Crasher) {
+          const c = other;
+          if (e.pos.dist(c.pos) < e.radius + c.radius) {
+            c.takeDamage(bodyDamageE * dt, e.id);
+            e.takeDamage(c.damage * dt, c.id);
+            const dir = e.pos.sub(c.pos).normalize();
+            e.vel = e.vel.add(dir.mult(200 * dt));
+            c.vel = c.vel.sub(dir.mult(200 * dt));
+
+            if (c.dead) this.distributeXp(c, 15);
           }
         } else if (other instanceof EnemyTank && other.id > e.id) {
           const otherE = other;
           if (e.pos.dist(otherE.pos) < e.radius + otherE.radius) {
-            const bodyDamageE = 400 + e.stats.bodyDamage * 200;
-            const bodyDamageOther = 400 + otherE.stats.bodyDamage * 200;
+            let bodyDamageOther = 400 + getEffectiveStat(otherE.stats.bodyDamage) * 200;
+            if (otherE.tankClass === TankClass.Spike) bodyDamageOther *= 1.5;
+            
             otherE.takeDamage(bodyDamageE * dt, e.id);
             e.takeDamage(bodyDamageOther * dt, otherE.id);
             
@@ -2225,12 +2341,12 @@ export class Game {
             if (otherE.dead) {
               const totalScore = calculateTotalXp(otherE.level, otherE.xp);
               const xpReward = Math.floor(Math.pow(Math.sqrt(totalScore), 1.7));
-              e.gainXp(xpReward);
+              this.distributeXp(otherE, xpReward);
             }
             if (e.dead) {
               const totalScore = calculateTotalXp(e.level, e.xp);
               const xpReward = Math.floor(Math.pow(Math.sqrt(totalScore), 1.7));
-              otherE.gainXp(xpReward);
+              this.distributeXp(e, xpReward);
             }
           }
         }
@@ -2528,6 +2644,29 @@ export class Game {
       if (stat === 'maxHealth') {
         this.player.maxHealth += 5;
         this.player.health += 5;
+      }
+    }
+  }
+
+  maxUpgradeStat(stat: string) {
+    const p = this.player;
+    if (!p) return;
+    const maxLevel = p.level >= 80 ? 14 : 7;
+    this.queuedUpgrades.set(stat, maxLevel);
+    this.processQueuedUpgrades();
+  }
+
+  processQueuedUpgrades() {
+    const p = this.player;
+    if (!p || p.skillPoints <= 0) return;
+    
+    for (const [stat, targetLevel] of this.queuedUpgrades.entries()) {
+      const currentLevel = p.stats[stat as keyof Player['stats']] || 0;
+      if (currentLevel < targetLevel && p.skillPoints > 0) {
+        this.upgradeStat(stat as any);
+      }
+      if (currentLevel >= targetLevel) {
+        this.queuedUpgrades.delete(stat);
       }
     }
   }
